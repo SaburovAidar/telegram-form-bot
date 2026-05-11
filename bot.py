@@ -31,12 +31,79 @@ STATUS_LABELS = {s[1]: s[0] for s in STATUSES}
 
 SERVICES_LIST = [
     "🪪 Водительские удостоверения",
+    "🚜 Тракторные права",
     "📄 СТС",
     "📋 ПТС",
     "🏫 Документы автошколы",
     "🏥 Медицинская справка",
     "🎓 Диплом",
 ]
+
+SERVICE_PHOTOS = {
+    "s_vu": "https://i.postimg.cc/65wrGwPB/1.png",
+    "s_traktor": "https://i.postimg.cc/wMzmJc07/traktor.png",
+    "s_sts": "https://i.postimg.cc/DyjSyTkw/sts.png",
+    "s_avto": "https://i.postimg.cc/ZqyBMDQR/Avtoskola.jpg",
+    "s_med": "https://i.postimg.cc/90cDzXQv/Med.jpg",
+}
+
+SERVICE_TEXTS = {
+    "s_vu": (
+        "🪪 *Водительские удостоверения*\n\n"
+        "⏱ Срок: *от 7 до 14 дней*\n\n"
+        "📎 *Документы:*\n"
+        "• Паспорт\n• Прописка\n• Фото 3×4\n• Фото подписи\n\n"
+        "📱 @OlegSergeevichGibdd"
+    ),
+    "s_traktor": (
+        "🚜 *Тракторные права*\n\n"
+        "📋 *Категории:* A, B, C, D, E, F\n"
+        "⏱ Срок: *до 15 дней*\n\n"
+        "📎 *Документы:*\n"
+        "• Паспорт\n• Прописка\n• Фото 3×4\n\n"
+        "📱 @OlegSergeevichGibdd"
+    ),
+    "s_sts": (
+        "📄 *СТС — Свидетельство о регистрации ТС*\n\n"
+        "⏱ Срок: *от 5 до 10 дней*\n\n"
+        "📎 *Документы:*\n"
+        "• Паспорт владельца\n• ПТС автомобиля\n"
+        "• Договор купли-продажи\n• Полис ОСАГО\n"
+        "• Квитанция об оплате госпошлины\n\n"
+        "📱 @OlegSergeevichGibdd"
+    ),
+    "s_pts": (
+        "📋 *ПТС — Паспорт транспортного средства*\n\n"
+        "⏱ Срок: *от 7 до 14 дней*\n\n"
+        "📎 *Документы:*\n"
+        "• Паспорт владельца\n• Прописка\n"
+        "• VIN номер автомобиля\n"
+        "• Документ о праве собственности\n"
+        "• Полис ОСАГО\n• Диагностическая карта\n\n"
+        "📱 @OlegSergeevichGibdd"
+    ),
+    "s_avto": (
+        "🏫 *Документы автошколы*\n\n"
+        "⏱ Срок: *от 5 до 10 дней*\n\n"
+        "📎 *Документы:*\n"
+        "• Паспорт\n• Прописка\n\n"
+        "📱 @OlegSergeevichGibdd"
+    ),
+    "s_med": (
+        "🏥 *Медицинские справки*\n\n"
+        "⏱ Срок: *от 1 до 3 дней*\n\n"
+        "📎 *Документы:*\n"
+        "• Паспорт\n• Прописка\n\n"
+        "📱 @OlegSergeevichGibdd"
+    ),
+    "s_diplom": (
+        "🎓 *Дипломы | Высшее • Среднее образование*\n\n"
+        "⏱ Срок: *от 7 до 14 дней*\n\n"
+        "📎 *Документы:*\n"
+        "• Паспорт\n• Прописка\n• СНИЛС\n• Фото 3×4\n\n"
+        "📱 @OlegSergeevichGibdd"
+    ),
+}
 
 
 def save_user(tg_id, username, first_name, last_name, ref_by=None):
@@ -54,7 +121,7 @@ def save_user(tg_id, username, first_name, last_name, ref_by=None):
 
 def get_subscribers():
     try:
-        r = requests.get(APPS_SCRIPT_URL + "?action=list", timeout=10)
+        r = requests.get(APPS_SCRIPT_URL + "?action=list", timeout=15)
         return r.json()
     except Exception as e:
         print(f"Get subs error: {e}")
@@ -76,6 +143,22 @@ def order_kb(back="services"):
         [InlineKeyboardButton("✍️ Оформить сейчас", url="https://t.me/OlegSergeevichGibdd")],
         [InlineKeyboardButton("◀️ Назад", callback_data=back)],
     ])
+
+
+async def send_service(query, key):
+    text = SERVICE_TEXTS.get(key, "")
+    kb = order_kb()
+    photo = SERVICE_PHOTOS.get(key)
+    if photo:
+        try:
+            await query.edit_message_media(
+                media=__import__('telegram').InputMediaPhoto(media=photo, caption=text, parse_mode="Markdown"),
+                reply_markup=kb,
+            )
+            return
+        except:
+            pass
+    await query.edit_message_caption(caption=text, parse_mode="Markdown", reply_markup=kb)
 
 
 # ── /start ────────────────────────────────────────────────────
@@ -117,14 +200,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     save_user(user.id, user.username or "", user.first_name or "", user.last_name or "", ref_by)
 
-    # Напоминание через 1 день
     if context.job_queue:
-        context.job_queue.run_once(
-            reminder_job,
-            when=timedelta(days=1),
-            data={"chat_id": user.id, "name": user.first_name},
-            name=f"reminder_{user.id}",
-        )
+        jobs = context.job_queue.get_jobs_by_name(f"reminder_{user.id}")
+        if not jobs:
+            context.job_queue.run_once(
+                reminder_job,
+                when=timedelta(days=1),
+                data={"chat_id": user.id, "name": user.first_name},
+                name=f"reminder_{user.id}",
+            )
 
     caption = (
         f"👋 Меня зовут *{CHARACTER_NAME}*, приятно познакомиться!\n\n"
@@ -141,7 +225,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(caption, parse_mode="Markdown", reply_markup=main_menu())
 
 
-# ── Напоминание ───────────────────────────────────────────────
 async def reminder_job(context: ContextTypes.DEFAULT_TYPE):
     d = context.job.data
     try:
@@ -172,11 +255,20 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"👋 Меня зовут *{CHARACTER_NAME}*, приятно познакомиться!\n\n"
             f"{CHARACTER_DESCRIPTION}"
         )
-        await query.edit_message_caption(caption=caption, parse_mode="Markdown", reply_markup=main_menu())
+        try:
+            await query.edit_message_media(
+                media=__import__('telegram').InputMediaPhoto(
+                    media=CHARACTER_IMAGE_URL, caption=caption, parse_mode="Markdown"
+                ),
+                reply_markup=main_menu(),
+            )
+        except:
+            await query.edit_message_caption(caption=caption, parse_mode="Markdown", reply_markup=main_menu())
 
     elif query.data == "services":
         kb = [
             [InlineKeyboardButton("🪪 Водительские удостоверения", callback_data="s_vu")],
+            [InlineKeyboardButton("🚜 Тракторные права", callback_data="s_traktor")],
             [InlineKeyboardButton("📄 СТС", callback_data="s_sts")],
             [InlineKeyboardButton("📋 ПТС", callback_data="s_pts")],
             [InlineKeyboardButton("🏫 Документы автошколы", callback_data="s_avto")],
@@ -190,82 +282,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=InlineKeyboardMarkup(kb),
         )
 
-    elif query.data == "s_vu":
-        await query.edit_message_caption(
-            caption=(
-                "🪪 *Водительские удостоверения*\n\n"
-                "⏱ Срок оформления: *от 7 до 14 дней*\n\n"
-                "📎 *Необходимые документы:*\n"
-                "• Паспорт\n• Прописка\n• Фото 3×4\n• Фото подписи\n\n"
-                "📱 @OlegSergeevichGibdd"
-            ),
-            parse_mode="Markdown", reply_markup=order_kb(),
-        )
-
-    elif query.data == "s_sts":
-        await query.edit_message_caption(
-            caption=(
-                "📄 *СТС — Свидетельство о регистрации ТС*\n\n"
-                "⏱ Срок оформления: *от 5 до 10 дней*\n\n"
-                "📎 *Необходимые документы:*\n"
-                "• Паспорт владельца\n• ПТС автомобиля\n"
-                "• Договор купли-продажи\n• Полис ОСАГО\n"
-                "• Квитанция об оплате госпошлины\n\n"
-                "📱 @OlegSergeevichGibdd"
-            ),
-            parse_mode="Markdown", reply_markup=order_kb(),
-        )
-
-    elif query.data == "s_pts":
-        await query.edit_message_caption(
-            caption=(
-                "📋 *ПТС — Паспорт транспортного средства*\n\n"
-                "⏱ Срок оформления: *от 7 до 14 дней*\n\n"
-                "📎 *Необходимые документы:*\n"
-                "• Паспорт владельца\n• Прописка\n"
-                "• VIN номер автомобиля\n"
-                "• Документ о праве собственности\n"
-                "• Полис ОСАГО\n• Диагностическая карта\n\n"
-                "📱 @OlegSergeevichGibdd"
-            ),
-            parse_mode="Markdown", reply_markup=order_kb(),
-        )
-
-    elif query.data == "s_avto":
-        await query.edit_message_caption(
-            caption=(
-                "🏫 *Документы автошколы*\n\n"
-                "⏱ Срок оформления: *от 5 до 10 дней*\n\n"
-                "📎 *Необходимые документы:*\n"
-                "• Паспорт\n• Прописка\n\n"
-                "📱 @OlegSergeevichGibdd"
-            ),
-            parse_mode="Markdown", reply_markup=order_kb(),
-        )
-
-    elif query.data == "s_med":
-        await query.edit_message_caption(
-            caption=(
-                "🏥 *Медицинские справки*\n\n"
-                "⏱ Срок оформления: *от 1 до 3 дней*\n\n"
-                "📎 *Необходимые документы:*\n"
-                "• Паспорт\n• Прописка\n\n"
-                "📱 @OlegSergeevichGibdd"
-            ),
-            parse_mode="Markdown", reply_markup=order_kb(),
-        )
-
-    elif query.data == "s_diplom":
-        await query.edit_message_caption(
-            caption=(
-                "🎓 *Дипломы | Высшее • Среднее образование*\n\n"
-                "⏱ Срок оформления: *от 7 до 14 дней*\n\n"
-                "📎 *Необходимые документы:*\n"
-                "• Паспорт\n• Прописка\n• СНИЛС\n• Фото 3×4\n\n"
-                "📱 @OlegSergeevichGibdd"
-            ),
-            parse_mode="Markdown", reply_markup=order_kb(),
-        )
+    elif query.data in SERVICE_TEXTS:
+        await send_service(query, query.data)
 
     elif query.data == "my_status":
         uid = str(user.id)
@@ -329,27 +347,112 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
-# ── /admin ────────────────────────────────────────────────────
+# ── /admin — красивая панель ──────────────────────────────────
 async def admin_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in ADMIN_IDS:
         await update.message.reply_text("❌ Нет доступа.")
         return ConversationHandler.END
+
+    kb = [
+        [InlineKeyboardButton("📊 Изменить статус клиента", callback_data="adm_status")],
+        [InlineKeyboardButton("📢 Рассылка", callback_data="adm_broadcast")],
+        [InlineKeyboardButton("👥 Список подписчиков", callback_data="adm_subs")],
+        [InlineKeyboardButton("📈 Статистика", callback_data="adm_stats")],
+    ]
     await update.message.reply_text(
-        "👮 *Админ панель*\n\nВведите @username или ID клиента:",
+        "👮 *Админ панель*\n\n"
+        "Добро пожаловать, командир! 🚔\n"
+        "Выберите действие:",
         parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(kb),
     )
     return ADMIN_ENTER_USER
 
 
+async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "adm_status":
+        await query.edit_message_text(
+            "👤 Введите @username или ID клиента:",
+            parse_mode="Markdown",
+        )
+        context.user_data["admin_action"] = "status"
+        return ADMIN_ENTER_USER
+
+    elif query.data == "adm_broadcast":
+        await query.edit_message_text(
+            "📢 *Рассылка*\n\nНапишите текст сообщения которое получат все подписчики:\n\n/cancel — отмена",
+            parse_mode="Markdown",
+        )
+        context.user_data["admin_action"] = "broadcast"
+        return ADMIN_ENTER_USER
+
+    elif query.data == "adm_subs":
+        subs = get_subscribers()
+        total = len(subs)
+        text = f"👥 *Подписчики: {total}*\n\n"
+        for i, sub in enumerate(subs[:30], 1):
+            username = f"@{sub['username']}" if sub.get('username') else "—"
+            name = (sub.get('first_name', '') + " " + sub.get('last_name', '')).strip() or "—"
+            text += f"{i}. {name} | {username} | `{sub.get('tg_id', '')}`\n"
+        if total > 30:
+            text += f"\n_...и ещё {total - 30}. Полный список в таблице._"
+        await query.edit_message_text(text[:4000], parse_mode="Markdown")
+        return ConversationHandler.END
+
+    elif query.data == "adm_stats":
+        subs = get_subscribers()
+        total = len(subs)
+        active_statuses = len(user_statuses)
+        text = (
+            f"📈 *Статистика бота*\n\n"
+            f"👥 Всего подписчиков: *{total}*\n"
+            f"📊 Активных заявок: *{active_statuses}*\n"
+        )
+        await query.edit_message_text(text, parse_mode="Markdown")
+        return ConversationHandler.END
+
+
 async def admin_enter_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["target"] = update.message.text.strip().replace("@", "")
-    kb = [[InlineKeyboardButton(s, callback_data=f"admsvc_{i}")] for i, s in enumerate(SERVICES_LIST)]
-    await update.message.reply_text(
-        f"✅ Клиент: *{context.user_data['target']}*\n\nВыберите услугу:",
-        parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup(kb),
-    )
-    return ADMIN_CHOOSE_SERVICE
+    action = context.user_data.get("admin_action")
+
+    if action == "broadcast":
+        text = update.message.text
+        subs = get_subscribers()
+        if not subs:
+            await update.message.reply_text("❌ Нет подписчиков.")
+            return ConversationHandler.END
+
+        await update.message.reply_text(f"📤 Отправляю {len(subs)} подписчикам...")
+        success = 0
+        fail = 0
+        for sub in subs:
+            try:
+                await context.bot.send_message(
+                    chat_id=int(sub["tg_id"]),
+                    text=f"📢 *Сообщение от Олега Сергеевича:*\n\n{text}",
+                    parse_mode="Markdown",
+                )
+                success += 1
+            except:
+                fail += 1
+
+        await update.message.reply_text(
+            f"✅ Рассылка завершена!\n\n📨 Отправлено: {success}\n❌ Не доставлено: {fail}"
+        )
+        return ConversationHandler.END
+
+    else:
+        context.user_data["target"] = update.message.text.strip().replace("@", "")
+        kb = [[InlineKeyboardButton(s, callback_data=f"admsvc_{i}")] for i, s in enumerate(SERVICES_LIST)]
+        await update.message.reply_text(
+            f"✅ Клиент: *{context.user_data['target']}*\n\nВыберите услугу:",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(kb),
+        )
+        return ADMIN_CHOOSE_SERVICE
 
 
 async def admin_choose_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -398,7 +501,11 @@ async def admin_choose_status(update: Update, context: ContextTypes.DEFAULT_TYPE
         notify = f"⚠️ Не удалось уведомить: {e}"
 
     await query.edit_message_text(
-        f"✅ Готово!\n\n👤 Клиент: {target}\n🗂 Услуга: {service}\n📌 Статус: {label}\n\n{notify}",
+        f"✅ *Готово!*\n\n"
+        f"👤 Клиент: `{target}`\n"
+        f"🗂 Услуга: {service}\n"
+        f"📌 Статус: {label}\n\n"
+        f"{notify}",
         parse_mode="Markdown",
     )
     return ConversationHandler.END
@@ -406,48 +513,6 @@ async def admin_choose_status(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def admin_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Отменено.")
-    return ConversationHandler.END
-
-
-# ── /broadcast ────────────────────────────────────────────────
-async def broadcast_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id not in ADMIN_IDS:
-        await update.message.reply_text("❌ Нет доступа.")
-        return ConversationHandler.END
-    await update.message.reply_text(
-        "📢 *Рассылка*\n\nНапишите сообщение которое получат все подписчики.\n\n/cancel — отмена",
-        parse_mode="Markdown",
-    )
-    return BROADCAST_MSG
-
-
-async def broadcast_send(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-    subs = get_subscribers()
-    if not subs:
-        await update.message.reply_text("❌ Нет подписчиков.")
-        return ConversationHandler.END
-
-    await update.message.reply_text(f"📤 Отправляю {len(subs)} подписчикам...")
-
-    success = 0
-    fail = 0
-    for sub in subs:
-        try:
-            await context.bot.send_message(
-                chat_id=int(sub["tg_id"]),
-                text=f"📢 *Сообщение от Олега Сергеевича:*\n\n{text}",
-                parse_mode="Markdown",
-            )
-            success += 1
-        except:
-            fail += 1
-
-    await update.message.reply_text(
-        f"✅ Рассылка завершена!\n\n"
-        f"📨 Отправлено: {success}\n"
-        f"❌ Не доставлено: {fail}"
-    )
     return ConversationHandler.END
 
 
@@ -464,42 +529,18 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = f"📊 *Подписчики: {total}*\n\n"
     for i, sub in enumerate(subs[:50], 1):
         username = f"@{sub['username']}" if sub.get('username') else "—"
-        name = (sub.get('first_name', '') + " " + sub.get('last_name', '')).strip()
+        name = (sub.get('first_name', '') + " " + sub.get('last_name', '')).strip() or "—"
         text += f"{i}. {name} | {username} | `{sub.get('tg_id', '')}`\n"
     if total > 50:
         text += f"\n_...и ещё {total - 50}. Смотри таблицу._"
     await update.message.reply_text(text[:4000], parse_mode="Markdown")
 
 
-# ── Запуск ────────────────────────────────────────────────────
-async def post_init(app):
-    # Обычные пользователи — только базовые команды
-    await app.bot.set_my_commands([
-        BotCommand("start", "🏠 Главное меню"),
-        BotCommand("status", "📊 Мой статус заявки"),
-        BotCommand("services", "📋 Услуги"),
-        BotCommand("contact", "📞 Связаться"),
-    ])
-    # Админы — видят все команды
-    from telegram import BotCommandScopeChat
-    for admin_id in ADMIN_IDS:
-        try:
-            await app.bot.set_my_commands([
-                BotCommand("start", "🏠 Главное меню"),
-                BotCommand("status", "📊 Мой статус заявки"),
-                BotCommand("services", "📋 Услуги"),
-                BotCommand("contact", "📞 Связаться"),
-                BotCommand("admin", "👮 Админ панель"),
-                BotCommand("broadcast", "📢 Рассылка"),
-                BotCommand("stats", "📈 Статистика"),
-            ], scope=BotCommandScopeChat(chat_id=admin_id))
-        except:
-            pass
-
-
+# ── Команды ───────────────────────────────────────────────────
 async def services_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb = [
         [InlineKeyboardButton("🪪 Водительские удостоверения", callback_data="s_vu")],
+        [InlineKeyboardButton("🚜 Тракторные права", callback_data="s_traktor")],
         [InlineKeyboardButton("📄 СТС", callback_data="s_sts")],
         [InlineKeyboardButton("📋 ПТС", callback_data="s_pts")],
         [InlineKeyboardButton("🏫 Документы автошколы", callback_data="s_avto")],
@@ -541,23 +582,44 @@ async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
+# ── Запуск ────────────────────────────────────────────────────
+async def post_init(app):
+    await app.bot.set_my_commands([
+        BotCommand("start", "🏠 Главное меню"),
+        BotCommand("status", "📊 Мой статус заявки"),
+        BotCommand("services", "📋 Услуги"),
+        BotCommand("contact", "📞 Связаться"),
+    ])
+    from telegram import BotCommandScopeChat
+    for admin_id in ADMIN_IDS:
+        try:
+            await app.bot.set_my_commands([
+                BotCommand("start", "🏠 Главное меню"),
+                BotCommand("status", "📊 Мой статус заявки"),
+                BotCommand("services", "📋 Услуги"),
+                BotCommand("contact", "📞 Связаться"),
+                BotCommand("admin", "👮 Админ панель"),
+                BotCommand("stats", "📈 Статистика"),
+            ], scope=BotCommandScopeChat(chat_id=admin_id))
+        except:
+            pass
+
+
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).post_init(post_init).build()
 
     admin_conv = ConversationHandler(
-        entry_points=[CommandHandler("admin", admin_start)],
+        entry_points=[
+            CommandHandler("admin", admin_start),
+            CallbackQueryHandler(admin_panel_handler, pattern="^adm_"),
+        ],
         states={
-            ADMIN_ENTER_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_enter_user)],
+            ADMIN_ENTER_USER: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, admin_enter_user),
+                CallbackQueryHandler(admin_panel_handler, pattern="^adm_"),
+            ],
             ADMIN_CHOOSE_SERVICE: [CallbackQueryHandler(admin_choose_service, pattern="^admsvc_")],
             ADMIN_CHOOSE_STATUS: [CallbackQueryHandler(admin_choose_status, pattern="^admsts_")],
-        },
-        fallbacks=[CommandHandler("cancel", admin_cancel)],
-    )
-
-    broadcast_conv = ConversationHandler(
-        entry_points=[CommandHandler("broadcast", broadcast_start)],
-        states={
-            BROADCAST_MSG: [MessageHandler(filters.TEXT & ~filters.COMMAND, broadcast_send)],
         },
         fallbacks=[CommandHandler("cancel", admin_cancel)],
     )
@@ -568,7 +630,6 @@ def main():
     app.add_handler(CommandHandler("contact", contact_cmd))
     app.add_handler(CommandHandler("status", status_cmd))
     app.add_handler(admin_conv)
-    app.add_handler(broadcast_conv)
     app.add_handler(CallbackQueryHandler(button_handler))
 
     logger.info("Бот запущено ✅")
