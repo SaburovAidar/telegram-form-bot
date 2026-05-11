@@ -150,7 +150,7 @@ def get_greeting(name):
     return f"{phrase}\n_{time_g}!_"
 
 
-def save_user(tg_id, username, first_name, last_name, ref_by=None):
+def save_user(tg_id, username, first_name, last_name, ref_by=None, source=None):
     try:
         requests.post(APPS_SCRIPT_URL, json={
             "tg_id": str(tg_id),
@@ -158,9 +158,26 @@ def save_user(tg_id, username, first_name, last_name, ref_by=None):
             "first_name": first_name,
             "last_name": last_name,
             "ref_by": str(ref_by) if ref_by else "",
+            "source": source or "",
         }, timeout=10)
     except Exception as e:
         print(f"Sheets error: {e}")
+
+
+def load_sources_from_sheet():
+    try:
+        r = requests.get(APPS_SCRIPT_URL + "?action=list", timeout=15)
+        subs = r.json()
+        for sub in subs:
+            src = sub.get("source", "")
+            if src and not src.startswith("REF_") and src != "":
+                if src not in source_stats:
+                    source_stats[src] = []
+                tg_id = sub.get("tg_id")
+                if tg_id and tg_id not in source_stats[src]:
+                    source_stats[src].append(tg_id)
+    except Exception as e:
+        print(f"Load sources error: {e}")
 
 
 def get_subscribers():
@@ -253,7 +270,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except:
                 pass
 
-    save_user(user.id, user.username or "", user.first_name or "", user.last_name or "", ref_by)
+    save_user(user.id, user.username or "", user.first_name or "", user.last_name or "", ref_by, source if context.args and context.args[0].startswith("SRC_") else None)
 
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
     await asyncio.sleep(1)
@@ -736,6 +753,7 @@ async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def post_init(app):
+    load_sources_from_sheet()
     await app.bot.set_my_commands([
         BotCommand("start", "🏠 Главное меню"),
         BotCommand("status", "📊 Мой статус"),
