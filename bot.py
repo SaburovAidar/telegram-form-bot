@@ -166,18 +166,29 @@ def save_user(tg_id, username, first_name, last_name, ref_by=None, source=None):
 
 def load_sources_from_sheet():
     try:
-        r = requests.get(APPS_SCRIPT_URL + "?action=list", timeout=15)
-        subs = r.json()
-        for sub in subs:
-            src = sub.get("source", "")
-            if src and not src.startswith("REF_") and src != "":
-                if src not in source_stats:
-                    source_stats[src] = []
-                tg_id = sub.get("tg_id")
-                if tg_id and tg_id not in source_stats[src]:
-                    source_stats[src].append(tg_id)
+        r = requests.get(APPS_SCRIPT_URL + "?action=sources", timeout=15)
+        data = r.json()
+        for src, ids in data.items():
+            source_stats[src] = ids
+        print(f"Loaded {len(source_stats)} sources from sheet")
     except Exception as e:
         print(f"Load sources error: {e}")
+
+
+def save_source_to_sheet(source, tg_id):
+    try:
+        requests.post(APPS_SCRIPT_URL, json={
+            "action": "add_source",
+            "source": source,
+            "tg_id": str(tg_id),
+        }, timeout=10)
+    except Exception as e:
+        print(f"Save source error: {e}")
+
+
+def ensure_source_exists(source):
+    if source not in source_stats:
+        source_stats[source] = []
 
 
 def get_subscribers():
@@ -234,10 +245,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         arg = context.args[0]
         if arg.startswith("SRC_"):
             source = arg.replace("SRC_", "")
-            if source not in source_stats:
-                source_stats[source] = []
-            if user.id not in source_stats[source]:
-                source_stats[source].append(user.id)
+            ensure_source_exists(source)
+            if str(user.id) not in source_stats[source]:
+                source_stats[source].append(str(user.id))
+                save_source_to_sheet(source, user.id)
         elif arg.startswith("REF_"):
             try:
                 ref_by = int(arg.replace("REF_", ""))
