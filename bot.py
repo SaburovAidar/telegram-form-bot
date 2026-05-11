@@ -19,6 +19,8 @@ ADMIN_ENTER_USER, ADMIN_CHOOSE_SERVICE, ADMIN_CHOOSE_STATUS = range(3)
 BROADCAST_MSG = 10
 
 user_statuses = {}
+source_links = {}  # {source_name: count}
+source_stats = {}  # {source_name: [tg_ids]}
 
 STATUSES = [
     ("📥 Документы приняты в работу", "accepted"),
@@ -248,6 +250,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             pass
 
+    # Track source links
+    source = None
+    if context.args:
+        arg = context.args[0]
+        if arg.startswith("SRC_"):
+            source = arg.replace("SRC_", "")
+            if source not in source_stats:
+                source_stats[source] = []
+            if user.id not in source_stats[source]:
+                source_stats[source].append(user.id)
+
     save_user(user.id, user.username or "", user.first_name or "", user.last_name or "", ref_by)
 
     # Typing effect
@@ -455,6 +468,7 @@ async def admin_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
          InlineKeyboardButton("📢 Рассылка", callback_data="adm_broadcast")],
         [InlineKeyboardButton("👥 Подписчики", callback_data="adm_subs"),
          InlineKeyboardButton("📈 Статистика", callback_data="adm_stats")],
+        [InlineKeyboardButton("🔗 Ссылки", callback_data="adm_links")],
         [InlineKeyboardButton("❌ Закрыть", callback_data="adm_close")],
     ]
     await update.message.reply_text(
@@ -503,6 +517,41 @@ async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         await query.edit_message_text(text[:4000], parse_mode="Markdown")
         return ConversationHandler.END
 
+    elif query.data == "adm_links":
+        bot_info = await context.bot.get_me()
+        bot_username = bot_info.username
+        if not source_stats:
+            text = (
+                "🔗 *Ссылки для отслеживания*
+"
+                "━━━━━━━━━━━━━━━━
+"
+                "Ссылок пока нет.
+
+"
+                "Введите название источника
+"
+                "_(например: instagram, vk, канал)_:"
+            )
+            await query.edit_message_text(text, parse_mode="Markdown")
+            context.user_data["admin_action"] = "create_link"
+            return ADMIN_ENTER_USER
+        else:
+            text = "🔗 *Ссылки и статистика*
+━━━━━━━━━━━━━━━━
+"
+            for src, ids in source_stats.items():
+                link = f"t.me/{bot_username}?start=SRC_{src}"
+                text += f"📌 *{src}*: {len(ids)} чел.
+`{link}`
+
+"
+            text += "━━━━━━━━━━━━━━━━
+Введите название для новой ссылки:"
+            await query.edit_message_text(text[:4000], parse_mode="Markdown")
+            context.user_data["admin_action"] = "create_link"
+            return ADMIN_ENTER_USER
+
     elif query.data == "adm_stats":
         subs = get_subscribers()
         total = len(subs)
@@ -521,7 +570,33 @@ async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def admin_enter_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     action = context.user_data.get("admin_action")
 
-    if action == "broadcast":
+    if action == "create_link":
+        source_name = update.message.text.strip().lower().replace(" ", "_")
+        bot_info = await context.bot.get_me()
+        bot_username = bot_info.username
+        link = f"https://t.me/{bot_username}?start=SRC_{source_name}"
+        count = len(source_stats.get(source_name, []))
+        await update.message.reply_text(
+            f"✅ *Ссылка создана!*
+"
+            f"━━━━━━━━━━━━━━━━
+"
+            f"📌 Источник: *{source_name}*
+"
+            f"👥 Переходов: *{count}*
+"
+            f"━━━━━━━━━━━━━━━━
+"
+            f"🔗 Ваша ссылка:
+`{link}`
+
+"
+            f"_Скопируйте и разместите где нужно_",
+            parse_mode="Markdown",
+        )
+        return ConversationHandler.END
+
+    elif action == "broadcast":
         text = update.message.text
         subs = get_subscribers()
         if not subs:
@@ -739,6 +814,7 @@ def main():
             ],
         },
         fallbacks=[CommandHandler("cancel", admin_cancel)],
+        allow_reentry=True,
     )
 
     app.add_handler(CommandHandler("start", start))
