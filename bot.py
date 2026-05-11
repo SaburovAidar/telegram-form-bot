@@ -1,11 +1,13 @@
 import logging
 import requests
-from datetime import timedelta
+import random
+from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, CallbackQueryHandler,
     MessageHandler, ContextTypes, filters, ConversationHandler
 )
+from telegram.constants import ChatAction
 from config import BOT_TOKEN, CHARACTER_NAME, CHARACTER_DESCRIPTION, CHARACTER_IMAGE_URL, APPS_SCRIPT_URL
 
 logging.basicConfig(format="%(asctime)s | %(levelname)s | %(message)s", level=logging.INFO)
@@ -13,7 +15,6 @@ logger = logging.getLogger(__name__)
 
 ADMIN_IDS = [7984349049, 8485739966]
 
-# Состояния
 ADMIN_ENTER_USER, ADMIN_CHOOSE_SERVICE, ADMIN_CHOOSE_STATUS = range(3)
 BROADCAST_MSG = 10
 
@@ -27,6 +28,16 @@ STATUSES = [
     ("🏛 Ожидается добавление в Госуслуги", "gosuslugi"),
     ("✅ Готово", "done"),
 ]
+
+STATUS_PROGRESS = {
+    "accepted":   "▓░░░░░ 10%",
+    "processing": "▓▓▓░░░ 40%",
+    "exams":      "▓▓▓▓░░ 60%",
+    "sent":       "▓▓▓▓▓░ 80%",
+    "gosuslugi":  "▓▓▓▓▓▓ 95%",
+    "done":       "▓▓▓▓▓▓ 100% ✅",
+}
+
 STATUS_LABELS = {s[1]: s[0] for s in STATUSES}
 
 SERVICES_LIST = [
@@ -40,70 +51,105 @@ SERVICES_LIST = [
 ]
 
 SERVICE_PHOTOS = {
-    "s_vu": "https://i.postimg.cc/65wrGwPB/1.png",
+    "s_vu":      "https://i.postimg.cc/65wrGwPB/1.png",
     "s_traktor": "https://i.postimg.cc/wMzmJc07/traktor.png",
-    "s_sts": "https://i.postimg.cc/DyjSyTkw/sts.png",
-    "s_avto": "https://i.postimg.cc/ZqyBMDQR/Avtoskola.jpg",
-    "s_med": "https://i.postimg.cc/90cDzXQv/Med.jpg",
+    "s_sts":     "https://i.postimg.cc/DyjSyTkw/sts.png",
+    "s_avto":    "https://i.postimg.cc/ZqyBMDQR/Avtoskola.jpg",
+    "s_med":     "https://i.postimg.cc/90cDzXQv/Med.jpg",
 }
 
 SERVICE_TEXTS = {
     "s_vu": (
-        "🪪 *Водительские удостоверения*\n\n"
+        "🪪 *Водительские удостоверения*\n"
+        "━━━━━━━━━━━━━━━━\n"
         "⏱ Срок: *от 7 до 14 дней*\n\n"
-        "📎 *Документы:*\n"
-        "• Паспорт\n• Прописка\n• Фото 3×4\n• Фото подписи\n\n"
+        "📎 *Необходимые документы:*\n"
+        "› Паспорт\n› Прописка\n› Фото 3×4\n› Фото подписи\n"
+        "━━━━━━━━━━━━━━━━\n"
         "📱 @OlegSergeevichGibdd"
     ),
     "s_traktor": (
-        "🚜 *Тракторные права*\n\n"
-        "📋 *Категории:* A, B, C, D, E, F\n"
+        "🚜 *Тракторные права*\n"
+        "━━━━━━━━━━━━━━━━\n"
+        "📋 Категории: *A • B • C • D • E • F*\n"
         "⏱ Срок: *до 15 дней*\n\n"
-        "📎 *Документы:*\n"
-        "• Паспорт\n• Прописка\n• Фото 3×4\n\n"
+        "📎 *Необходимые документы:*\n"
+        "› Паспорт\n› Прописка\n› Фото 3×4\n"
+        "━━━━━━━━━━━━━━━━\n"
         "📱 @OlegSergeevichGibdd"
     ),
     "s_sts": (
-        "📄 *СТС — Свидетельство о регистрации ТС*\n\n"
+        "📄 *СТС — Свидетельство о регистрации ТС*\n"
+        "━━━━━━━━━━━━━━━━\n"
         "⏱ Срок: *от 5 до 10 дней*\n\n"
-        "📎 *Документы:*\n"
-        "• Паспорт владельца\n• ПТС автомобиля\n"
-        "• Договор купли-продажи\n• Полис ОСАГО\n"
-        "• Квитанция об оплате госпошлины\n\n"
+        "📎 *Необходимые документы:*\n"
+        "› Паспорт владельца\n› ПТС автомобиля\n"
+        "› Договор купли-продажи\n› Полис ОСАГО\n"
+        "› Квитанция госпошлины\n"
+        "━━━━━━━━━━━━━━━━\n"
         "📱 @OlegSergeevichGibdd"
     ),
     "s_pts": (
-        "📋 *ПТС — Паспорт транспортного средства*\n\n"
+        "📋 *ПТС — Паспорт транспортного средства*\n"
+        "━━━━━━━━━━━━━━━━\n"
         "⏱ Срок: *от 7 до 14 дней*\n\n"
-        "📎 *Документы:*\n"
-        "• Паспорт владельца\n• Прописка\n"
-        "• VIN номер автомобиля\n"
-        "• Документ о праве собственности\n"
-        "• Полис ОСАГО\n• Диагностическая карта\n\n"
+        "📎 *Необходимые документы:*\n"
+        "› Паспорт владельца\n› Прописка\n"
+        "› VIN номер автомобиля\n"
+        "› Документ о праве собственности\n"
+        "› Полис ОСАГО\n› Диагностическая карта\n"
+        "━━━━━━━━━━━━━━━━\n"
         "📱 @OlegSergeevichGibdd"
     ),
     "s_avto": (
-        "🏫 *Документы автошколы*\n\n"
+        "🏫 *Документы автошколы*\n"
+        "━━━━━━━━━━━━━━━━\n"
         "⏱ Срок: *от 5 до 10 дней*\n\n"
-        "📎 *Документы:*\n"
-        "• Паспорт\n• Прописка\n\n"
+        "📎 *Необходимые документы:*\n"
+        "› Паспорт\n› Прописка\n"
+        "━━━━━━━━━━━━━━━━\n"
         "📱 @OlegSergeevichGibdd"
     ),
     "s_med": (
-        "🏥 *Медицинские справки*\n\n"
+        "🏥 *Медицинские справки*\n"
+        "━━━━━━━━━━━━━━━━\n"
         "⏱ Срок: *от 1 до 3 дней*\n\n"
-        "📎 *Документы:*\n"
-        "• Паспорт\n• Прописка\n\n"
+        "📎 *Необходимые документы:*\n"
+        "› Паспорт\n› Прописка\n"
+        "━━━━━━━━━━━━━━━━\n"
         "📱 @OlegSergeevichGibdd"
     ),
     "s_diplom": (
-        "🎓 *Дипломы | Высшее • Среднее образование*\n\n"
+        "🎓 *Дипломы | Высшее • Среднее образование*\n"
+        "━━━━━━━━━━━━━━━━\n"
         "⏱ Срок: *от 7 до 14 дней*\n\n"
-        "📎 *Документы:*\n"
-        "• Паспорт\n• Прописка\n• СНИЛС\n• Фото 3×4\n\n"
+        "📎 *Необходимые документы:*\n"
+        "› Паспорт\n› Прописка\n› СНИЛС\n› Фото 3×4\n"
+        "━━━━━━━━━━━━━━━━\n"
         "📱 @OlegSergeevichGibdd"
     ),
 }
+
+GREETINGS = [
+    "👋 Рад видеть тебя, {name}!",
+    "🤝 Привет, {name}! Обращайся — помогу!",
+    "🚔 {name}, добро пожаловать!",
+    "💼 Здравствуй, {name}! Готов помочь.",
+    "⚡ {name}, на связи Олег Сергеевич!",
+]
+
+def get_greeting(name):
+    hour = datetime.now().hour
+    if 5 <= hour < 12:
+        time_greeting = "Доброе утро"
+    elif 12 <= hour < 18:
+        time_greeting = "Добрый день"
+    elif 18 <= hour < 23:
+        time_greeting = "Добрый вечер"
+    else:
+        time_greeting = "Доброй ночи"
+    phrase = random.choice(GREETINGS).format(name=name)
+    return f"{phrase}\n_{time_greeting}!_"
 
 
 def save_user(tg_id, username, first_name, last_name, ref_by=None):
@@ -130,10 +176,10 @@ def get_subscribers():
 
 def main_menu():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📋 Услуги", callback_data="services")],
-        [InlineKeyboardButton("📊 Мой статус", callback_data="my_status")],
-        [InlineKeyboardButton("📞 Связаться", callback_data="contact")],
-        [InlineKeyboardButton("⭐ Отзывы", callback_data="reviews")],
+        [InlineKeyboardButton("📋 Услуги", callback_data="services"),
+         InlineKeyboardButton("📊 Мой статус", callback_data="my_status")],
+        [InlineKeyboardButton("📞 Связаться", callback_data="contact"),
+         InlineKeyboardButton("⭐ Отзывы", callback_data="reviews")],
         [InlineKeyboardButton("👥 Пригласить друга", callback_data="referral")],
     ])
 
@@ -151,14 +197,18 @@ async def send_service(query, key):
     photo = SERVICE_PHOTOS.get(key)
     if photo:
         try:
+            import telegram
             await query.edit_message_media(
-                media=__import__('telegram').InputMediaPhoto(media=photo, caption=text, parse_mode="Markdown"),
+                media=telegram.InputMediaPhoto(media=photo, caption=text, parse_mode="Markdown"),
                 reply_markup=kb,
             )
             return
         except:
             pass
-    await query.edit_message_caption(caption=text, parse_mode="Markdown", reply_markup=kb)
+    try:
+        await query.edit_message_caption(caption=text, parse_mode="Markdown", reply_markup=kb)
+    except:
+        await query.edit_message_text(text=text, parse_mode="Markdown", reply_markup=kb)
 
 
 # ── /start ────────────────────────────────────────────────────
@@ -200,6 +250,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     save_user(user.id, user.username or "", user.first_name or "", user.last_name or "", ref_by)
 
+    # Typing effect
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    import asyncio
+    await asyncio.sleep(1)
+
     if context.job_queue:
         jobs = context.job_queue.get_jobs_by_name(f"reminder_{user.id}")
         if not jobs:
@@ -210,9 +265,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 name=f"reminder_{user.id}",
             )
 
+    greeting = get_greeting(user.first_name)
     caption = (
-        f"👋 Меня зовут *{CHARACTER_NAME}*, приятно познакомиться!\n\n"
-        f"{CHARACTER_DESCRIPTION}"
+        f"{greeting}\n\n"
+        f"Я *{CHARACTER_NAME}*\n"
+        "━━━━━━━━━━━━━━━━\n"
+        f"{CHARACTER_DESCRIPTION}\n"
+        "━━━━━━━━━━━━━━━━\n"
+        "Выберите что вас интересует 👇"
     )
     try:
         await update.message.reply_photo(
@@ -231,10 +291,13 @@ async def reminder_job(context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(
             chat_id=d["chat_id"],
             text=(
-                f"👋 {d['name']}, добрый день!\n\n"
-                "Напоминаем — оформление документов занимает от 7 дней.\n"
-                "Успейте подать заявку сейчас! ⚡\n\n"
-                "📱 Или напишите напрямую: @OlegSergeevichGibdd"
+                f"👋 {d['name']}, добрый день!\n"
+                "━━━━━━━━━━━━━━━━\n"
+                "Напоминаем — оформление документов\n"
+                "занимает от 7 дней.\n\n"
+                "⚡ Успейте подать заявку сейчас!\n"
+                "━━━━━━━━━━━━━━━━\n"
+                "📱 @OlegSergeevichGibdd"
             ),
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("✍️ Оформить сейчас", url="https://t.me/OlegSergeevichGibdd")]
@@ -251,33 +314,46 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = query.from_user
 
     if query.data == "back":
+        greeting = get_greeting(user.first_name)
         caption = (
-            f"👋 Меня зовут *{CHARACTER_NAME}*, приятно познакомиться!\n\n"
-            f"{CHARACTER_DESCRIPTION}"
+            f"{greeting}\n\n"
+            f"Я *{CHARACTER_NAME}*\n"
+            "━━━━━━━━━━━━━━━━\n"
+            f"{CHARACTER_DESCRIPTION}\n"
+            "━━━━━━━━━━━━━━━━\n"
+            "Выберите что вас интересует 👇"
         )
         try:
+            import telegram
             await query.edit_message_media(
-                media=__import__('telegram').InputMediaPhoto(
+                media=telegram.InputMediaPhoto(
                     media=CHARACTER_IMAGE_URL, caption=caption, parse_mode="Markdown"
                 ),
                 reply_markup=main_menu(),
             )
         except:
-            await query.edit_message_caption(caption=caption, parse_mode="Markdown", reply_markup=main_menu())
+            try:
+                await query.edit_message_caption(caption=caption, parse_mode="Markdown", reply_markup=main_menu())
+            except:
+                pass
 
     elif query.data == "services":
         kb = [
             [InlineKeyboardButton("🪪 Водительские удостоверения", callback_data="s_vu")],
             [InlineKeyboardButton("🚜 Тракторные права", callback_data="s_traktor")],
-            [InlineKeyboardButton("📄 СТС", callback_data="s_sts")],
-            [InlineKeyboardButton("📋 ПТС", callback_data="s_pts")],
+            [InlineKeyboardButton("📄 СТС", callback_data="s_sts"),
+             InlineKeyboardButton("📋 ПТС", callback_data="s_pts")],
             [InlineKeyboardButton("🏫 Документы автошколы", callback_data="s_avto")],
             [InlineKeyboardButton("🏥 Медицинские справки", callback_data="s_med")],
             [InlineKeyboardButton("🎓 Дипломы | Высшее • Среднее", callback_data="s_diplom")],
             [InlineKeyboardButton("◀️ Назад", callback_data="back")],
         ]
         await query.edit_message_caption(
-            caption="📋 *Услуги Олега Сергеевича*\n\nВыберите интересующую услугу:",
+            caption=(
+                "📋 *Услуги Олега Сергеевича*\n"
+                "━━━━━━━━━━━━━━━━\n"
+                "Выберите интересующую услугу:"
+            ),
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(kb),
         )
@@ -290,12 +366,16 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if uid in user_statuses:
             s = user_statuses[uid]
             status_text = STATUS_LABELS.get(s["status"], s["status"])
+            progress = STATUS_PROGRESS.get(s["status"], "")
             await query.edit_message_caption(
                 caption=(
-                    f"📊 *Статус вашей заявки*\n\n"
+                    "📊 *Статус вашей заявки*\n"
+                    "━━━━━━━━━━━━━━━━\n"
                     f"🗂 Услуга: {s['service']}\n"
                     f"📌 Статус: {status_text}\n"
-                    f"🕐 Обновлено: {s['updated']}"
+                    f"📶 Прогресс: `{progress}`\n"
+                    f"🕐 Обновлено: {s['updated']}\n"
+                    "━━━━━━━━━━━━━━━━"
                 ),
                 parse_mode="Markdown",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="back")]]),
@@ -303,9 +383,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await query.edit_message_caption(
                 caption=(
-                    "📊 *Статус заявки*\n\n"
+                    "📊 *Статус заявки*\n"
+                    "━━━━━━━━━━━━━━━━\n"
                     "У вас пока нет активных заявок.\n\n"
-                    "Оформите заявку — и здесь появится статус!\n\n"
+                    "Оформите заявку — и здесь\nпоявится статус!\n"
+                    "━━━━━━━━━━━━━━━━\n"
                     "📱 @OlegSergeevichGibdd"
                 ),
                 parse_mode="Markdown",
@@ -317,7 +399,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif query.data == "contact":
         await query.edit_message_caption(
-            caption="📞 *Связаться*\n\nНапишите напрямую — отвечаем быстро! ⚡",
+            caption=(
+                "📞 *Связаться*\n"
+                "━━━━━━━━━━━━━━━━\n"
+                "Напишите напрямую — отвечаем быстро!\n\n"
+                "⚡ Среднее время ответа: *до 15 минут*\n"
+                "━━━━━━━━━━━━━━━━"
+            ),
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("✍️ Написать Олегу Сергеевичу", url="https://t.me/OlegSergeevichGibdd")],
@@ -327,7 +415,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif query.data == "reviews":
         await query.edit_message_caption(
-            caption="⭐ *Отзывы*\n\nСкоро здесь появятся отзывы клиентов.\n\n📱 @OlegSergeevichGibdd",
+            caption=(
+                "⭐ *Отзывы клиентов*\n"
+                "━━━━━━━━━━━━━━━━\n"
+                "Скоро здесь появятся отзывы.\n\n"
+                "📱 @OlegSergeevichGibdd\n"
+                "━━━━━━━━━━━━━━━━"
+            ),
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="back")]]),
         )
@@ -337,9 +431,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ref_link = f"https://t.me/{bot_username}?start=REF_{user.id}"
         await query.edit_message_caption(
             caption=(
-                "👥 *Пригласить друга*\n\n"
-                "Поделитесь ссылкой с другом!\n"
-                "Когда он оформит заказ — вы получите *кешбэк 5000₽* 💰\n\n"
+                "👥 *Пригласить друга*\n"
+                "━━━━━━━━━━━━━━━━\n"
+                "Поделитесь ссылкой с другом!\n\n"
+                "💰 Когда он оформит заказ —\n"
+                "вы получите *кешбэк 5000₽*\n"
+                "━━━━━━━━━━━━━━━━\n"
                 f"🔗 Ваша ссылка:\n`{ref_link}`"
             ),
             parse_mode="Markdown",
@@ -347,21 +444,22 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
-# ── /admin — красивая панель ──────────────────────────────────
+# ── /admin ────────────────────────────────────────────────────
 async def admin_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in ADMIN_IDS:
         await update.message.reply_text("❌ Нет доступа.")
         return ConversationHandler.END
 
     kb = [
-        [InlineKeyboardButton("📊 Изменить статус клиента", callback_data="adm_status")],
-        [InlineKeyboardButton("📢 Рассылка", callback_data="adm_broadcast")],
-        [InlineKeyboardButton("👥 Список подписчиков", callback_data="adm_subs")],
-        [InlineKeyboardButton("📈 Статистика", callback_data="adm_stats")],
+        [InlineKeyboardButton("📊 Статус клиента", callback_data="adm_status"),
+         InlineKeyboardButton("📢 Рассылка", callback_data="adm_broadcast")],
+        [InlineKeyboardButton("👥 Подписчики", callback_data="adm_subs"),
+         InlineKeyboardButton("📈 Статистика", callback_data="adm_stats")],
+        [InlineKeyboardButton("❌ Закрыть", callback_data="adm_close")],
     ]
     await update.message.reply_text(
-        "👮 *Админ панель*\n\n"
-        "Добро пожаловать, командир! 🚔\n"
+        "👮 *Админ панель*\n"
+        "━━━━━━━━━━━━━━━━\n"
         "Выберите действие:",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(kb),
@@ -373,17 +471,20 @@ async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     query = update.callback_query
     await query.answer()
 
-    if query.data == "adm_status":
+    if query.data == "adm_close":
+        await query.edit_message_text("✅ Панель закрыта.")
+        return ConversationHandler.END
+
+    elif query.data == "adm_status":
         await query.edit_message_text(
-            "👤 Введите @username или ID клиента:",
-            parse_mode="Markdown",
+            "👤 Введите @username или ID клиента:\n\n/cancel — отмена",
         )
         context.user_data["admin_action"] = "status"
         return ADMIN_ENTER_USER
 
     elif query.data == "adm_broadcast":
         await query.edit_message_text(
-            "📢 *Рассылка*\n\nНапишите текст сообщения которое получат все подписчики:\n\n/cancel — отмена",
+            "📢 *Рассылка*\n\nНапишите текст сообщения:\n\n/cancel — отмена",
             parse_mode="Markdown",
         )
         context.user_data["admin_action"] = "broadcast"
@@ -392,7 +493,7 @@ async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     elif query.data == "adm_subs":
         subs = get_subscribers()
         total = len(subs)
-        text = f"👥 *Подписчики: {total}*\n\n"
+        text = f"👥 *Подписчики: {total}*\n━━━━━━━━━━━━━━━━\n"
         for i, sub in enumerate(subs[:30], 1):
             username = f"@{sub['username']}" if sub.get('username') else "—"
             name = (sub.get('first_name', '') + " " + sub.get('last_name', '')).strip() or "—"
@@ -405,13 +506,15 @@ async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     elif query.data == "adm_stats":
         subs = get_subscribers()
         total = len(subs)
-        active_statuses = len(user_statuses)
-        text = (
-            f"📈 *Статистика бота*\n\n"
-            f"👥 Всего подписчиков: *{total}*\n"
-            f"📊 Активных заявок: *{active_statuses}*\n"
+        active = len(user_statuses)
+        await query.edit_message_text(
+            f"📈 *Статистика*\n"
+            f"━━━━━━━━━━━━━━━━\n"
+            f"👥 Подписчиков: *{total}*\n"
+            f"📊 Активных заявок: *{active}*\n"
+            f"━━━━━━━━━━━━━━━━",
+            parse_mode="Markdown",
         )
-        await query.edit_message_text(text, parse_mode="Markdown")
         return ConversationHandler.END
 
 
@@ -424,7 +527,6 @@ async def admin_enter_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not subs:
             await update.message.reply_text("❌ Нет подписчиков.")
             return ConversationHandler.END
-
         await update.message.reply_text(f"📤 Отправляю {len(subs)} подписчикам...")
         success = 0
         fail = 0
@@ -432,21 +534,22 @@ async def admin_enter_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 await context.bot.send_message(
                     chat_id=int(sub["tg_id"]),
-                    text=f"📢 *Сообщение от Олега Сергеевича:*\n\n{text}",
+                    text=f"📢 *Сообщение от Олега Сергеевича:*\n━━━━━━━━━━━━━━━━\n{text}",
                     parse_mode="Markdown",
                 )
                 success += 1
             except:
                 fail += 1
-
         await update.message.reply_text(
-            f"✅ Рассылка завершена!\n\n📨 Отправлено: {success}\n❌ Не доставлено: {fail}"
+            f"✅ *Рассылка завершена!*\n\n📨 Отправлено: {success}\n❌ Не доставлено: {fail}",
+            parse_mode="Markdown",
         )
         return ConversationHandler.END
 
     else:
         context.user_data["target"] = update.message.text.strip().replace("@", "")
         kb = [[InlineKeyboardButton(s, callback_data=f"admsvc_{i}")] for i, s in enumerate(SERVICES_LIST)]
+        kb.append([InlineKeyboardButton("❌ Отмена", callback_data="adm_close")])
         await update.message.reply_text(
             f"✅ Клиент: *{context.user_data['target']}*\n\nВыберите услугу:",
             parse_mode="Markdown",
@@ -458,9 +561,13 @@ async def admin_enter_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def admin_choose_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    if query.data == "adm_close":
+        await query.edit_message_text("✅ Отменено.")
+        return ConversationHandler.END
     idx = int(query.data.replace("admsvc_", ""))
     context.user_data["service"] = SERVICES_LIST[idx]
     kb = [[InlineKeyboardButton(label, callback_data=f"admsts_{code}")] for label, code in STATUSES]
+    kb.append([InlineKeyboardButton("❌ Отмена", callback_data="adm_close")])
     await query.edit_message_text(
         f"🗂 Услуга: *{context.user_data['service']}*\n\nВыберите статус:",
         parse_mode="Markdown",
@@ -472,12 +579,15 @@ async def admin_choose_service(update: Update, context: ContextTypes.DEFAULT_TYP
 async def admin_choose_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    if query.data == "adm_close":
+        await query.edit_message_text("✅ Отменено.")
+        return ConversationHandler.END
     code = query.data.replace("admsts_", "")
     label = STATUS_LABELS.get(code, code)
+    progress = STATUS_PROGRESS.get(code, "")
     target = context.user_data["target"]
     service = context.user_data["service"]
 
-    from datetime import datetime
     user_statuses[target] = {
         "service": service,
         "status": code,
@@ -489,10 +599,13 @@ async def admin_choose_status(update: Update, context: ContextTypes.DEFAULT_TYPE
         await context.bot.send_message(
             chat_id=chat_id,
             text=(
-                "🚔 *Олег Сергеевич сообщает:*\n\n"
+                "🚔 *Олег Сергеевич сообщает:*\n"
+                "━━━━━━━━━━━━━━━━\n"
                 f"🗂 Услуга: {service}\n"
-                f"📌 Ваш статус: {label}\n\n"
-                "По вопросам пишите: @OlegSergeevichGibdd"
+                f"📌 Статус: {label}\n"
+                f"📶 Прогресс: `{progress}`\n"
+                "━━━━━━━━━━━━━━━━\n"
+                "По вопросам: @OlegSergeevichGibdd"
             ),
             parse_mode="Markdown",
         )
@@ -501,10 +614,13 @@ async def admin_choose_status(update: Update, context: ContextTypes.DEFAULT_TYPE
         notify = f"⚠️ Не удалось уведомить: {e}"
 
     await query.edit_message_text(
-        f"✅ *Готово!*\n\n"
+        f"✅ *Готово!*\n"
+        f"━━━━━━━━━━━━━━━━\n"
         f"👤 Клиент: `{target}`\n"
         f"🗂 Услуга: {service}\n"
-        f"📌 Статус: {label}\n\n"
+        f"📌 Статус: {label}\n"
+        f"📶 `{progress}`\n"
+        f"━━━━━━━━━━━━━━━━\n"
         f"{notify}",
         parse_mode="Markdown",
     )
@@ -522,33 +638,29 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Нет доступа.")
         return
     subs = get_subscribers()
-    if not subs:
-        await update.message.reply_text("📊 Подписчиков пока нет.")
-        return
     total = len(subs)
-    text = f"📊 *Подписчики: {total}*\n\n"
+    text = f"📊 *Подписчики: {total}*\n━━━━━━━━━━━━━━━━\n"
     for i, sub in enumerate(subs[:50], 1):
         username = f"@{sub['username']}" if sub.get('username') else "—"
         name = (sub.get('first_name', '') + " " + sub.get('last_name', '')).strip() or "—"
         text += f"{i}. {name} | {username} | `{sub.get('tg_id', '')}`\n"
     if total > 50:
-        text += f"\n_...и ещё {total - 50}. Смотри таблицу._"
+        text += f"\n_...и ещё {total - 50}._"
     await update.message.reply_text(text[:4000], parse_mode="Markdown")
 
 
-# ── Команды ───────────────────────────────────────────────────
 async def services_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb = [
         [InlineKeyboardButton("🪪 Водительские удостоверения", callback_data="s_vu")],
         [InlineKeyboardButton("🚜 Тракторные права", callback_data="s_traktor")],
-        [InlineKeyboardButton("📄 СТС", callback_data="s_sts")],
-        [InlineKeyboardButton("📋 ПТС", callback_data="s_pts")],
+        [InlineKeyboardButton("📄 СТС", callback_data="s_sts"),
+         InlineKeyboardButton("📋 ПТС", callback_data="s_pts")],
         [InlineKeyboardButton("🏫 Документы автошколы", callback_data="s_avto")],
         [InlineKeyboardButton("🏥 Медицинские справки", callback_data="s_med")],
         [InlineKeyboardButton("🎓 Дипломы | Высшее • Среднее", callback_data="s_diplom")],
     ]
     await update.message.reply_text(
-        "📋 *Услуги Олега Сергеевича*\n\nВыберите интересующую услугу:",
+        "📋 *Услуги Олега Сергеевича*\n━━━━━━━━━━━━━━━━\nВыберите услугу:",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(kb),
     )
@@ -556,7 +668,7 @@ async def services_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def contact_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "📞 *Связаться*\n\nНапишите напрямую — отвечаем быстро! ⚡",
+        "📞 *Связаться*\n━━━━━━━━━━━━━━━━\nОтвечаем быстро! ⚡",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("✍️ Написать Олегу Сергеевичу", url="https://t.me/OlegSergeevichGibdd")],
@@ -569,24 +681,23 @@ async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if uid in user_statuses:
         s = user_statuses[uid]
         status_text = STATUS_LABELS.get(s["status"], s["status"])
+        progress = STATUS_PROGRESS.get(s["status"], "")
         await update.message.reply_text(
-            f"📊 *Статус вашей заявки*\n\n"
+            f"📊 *Статус заявки*\n━━━━━━━━━━━━━━━━\n"
             f"🗂 Услуга: {s['service']}\n"
             f"📌 Статус: {status_text}\n"
-            f"🕐 Обновлено: {s['updated']}",
+            f"📶 `{progress}`\n"
+            f"🕐 {s['updated']}",
             parse_mode="Markdown",
         )
     else:
-        await update.message.reply_text(
-            "📊 У вас пока нет активных заявок.\n\n📱 @OlegSergeevichGibdd",
-        )
+        await update.message.reply_text("📊 Активных заявок нет.\n\n📱 @OlegSergeevichGibdd")
 
 
-# ── Запуск ────────────────────────────────────────────────────
 async def post_init(app):
     await app.bot.set_my_commands([
         BotCommand("start", "🏠 Главное меню"),
-        BotCommand("status", "📊 Мой статус заявки"),
+        BotCommand("status", "📊 Мой статус"),
         BotCommand("services", "📋 Услуги"),
         BotCommand("contact", "📞 Связаться"),
     ])
@@ -595,7 +706,7 @@ async def post_init(app):
         try:
             await app.bot.set_my_commands([
                 BotCommand("start", "🏠 Главное меню"),
-                BotCommand("status", "📊 Мой статус заявки"),
+                BotCommand("status", "📊 Мой статус"),
                 BotCommand("services", "📋 Услуги"),
                 BotCommand("contact", "📞 Связаться"),
                 BotCommand("admin", "👮 Админ панель"),
@@ -618,8 +729,14 @@ def main():
                 MessageHandler(filters.TEXT & ~filters.COMMAND, admin_enter_user),
                 CallbackQueryHandler(admin_panel_handler, pattern="^adm_"),
             ],
-            ADMIN_CHOOSE_SERVICE: [CallbackQueryHandler(admin_choose_service, pattern="^admsvc_")],
-            ADMIN_CHOOSE_STATUS: [CallbackQueryHandler(admin_choose_status, pattern="^admsts_")],
+            ADMIN_CHOOSE_SERVICE: [
+                CallbackQueryHandler(admin_choose_service, pattern="^admsvc_"),
+                CallbackQueryHandler(admin_choose_service, pattern="^adm_close"),
+            ],
+            ADMIN_CHOOSE_STATUS: [
+                CallbackQueryHandler(admin_choose_status, pattern="^admsts_"),
+                CallbackQueryHandler(admin_choose_status, pattern="^adm_close"),
+            ],
         },
         fallbacks=[CommandHandler("cancel", admin_cancel)],
     )
