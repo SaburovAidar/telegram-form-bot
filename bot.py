@@ -526,6 +526,22 @@ async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         context.user_data["admin_action"] = "create_link"
         return ADMIN_ENTER_USER
 
+    elif query.data.startswith("adm_link_view_"):
+        src = query.data.replace("adm_link_view_", "")
+        bot_info = await context.bot.get_me()
+        bot_username = bot_info.username
+        link = f"https://t.me/{bot_username}?start=SRC_{src}"
+        count = len(source_stats.get(src, []))
+        kb = [
+            [InlineKeyboardButton("◀️ К ссылкам", callback_data="adm_links")],
+        ]
+        await query.edit_message_text(
+            "📌 *" + src + "*\n━━━━━━━━━━━━━━━━\n👥 Переходов: *" + str(count) + "* чел.\n\n🔗 Ссылка:\n`" + link + "`\n━━━━━━━━━━━━━━━━\n_Скопируйте и разместите где нужно_",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(kb),
+        )
+        return ADMIN_ENTER_USER
+
     elif query.data == "adm_subs":
         subs = get_subscribers()
         total = len(subs)
