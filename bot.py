@@ -1,6 +1,7 @@
 import logging
 import requests
 import random
+import asyncio
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import (
@@ -14,13 +15,10 @@ logging.basicConfig(format="%(asctime)s | %(levelname)s | %(message)s", level=lo
 logger = logging.getLogger(__name__)
 
 ADMIN_IDS = [7984349049, 8485739966]
-
 ADMIN_ENTER_USER, ADMIN_CHOOSE_SERVICE, ADMIN_CHOOSE_STATUS = range(3)
-BROADCAST_MSG = 10
 
 user_statuses = {}
-source_links = {}  # {source_name: count}
-source_stats = {}  # {source_name: [tg_ids]}
+source_stats = {}
 
 STATUSES = [
     ("📥 Документы приняты в работу", "accepted"),
@@ -30,7 +28,6 @@ STATUSES = [
     ("🏛 Ожидается добавление в Госуслуги", "gosuslugi"),
     ("✅ Готово", "done"),
 ]
-
 STATUS_PROGRESS = {
     "accepted":   "▓░░░░░ 10%",
     "processing": "▓▓▓░░░ 40%",
@@ -39,7 +36,6 @@ STATUS_PROGRESS = {
     "gosuslugi":  "▓▓▓▓▓▓ 95%",
     "done":       "▓▓▓▓▓▓ 100% ✅",
 }
-
 STATUS_LABELS = {s[1]: s[0] for s in STATUSES}
 
 SERVICES_LIST = [
@@ -143,15 +139,15 @@ GREETINGS = [
 def get_greeting(name):
     hour = datetime.now().hour
     if 5 <= hour < 12:
-        time_greeting = "Доброе утро"
+        time_g = "Доброе утро"
     elif 12 <= hour < 18:
-        time_greeting = "Добрый день"
+        time_g = "Добрый день"
     elif 18 <= hour < 23:
-        time_greeting = "Добрый вечер"
+        time_g = "Добрый вечер"
     else:
-        time_greeting = "Доброй ночи"
+        time_g = "Доброй ночи"
     phrase = random.choice(GREETINGS).format(name=name)
-    return f"{phrase}\n_{time_greeting}!_"
+    return f"{phrase}\n_{time_g}!_"
 
 
 def save_user(tg_id, username, first_name, last_name, ref_by=None):
@@ -213,45 +209,10 @@ async def send_service(query, key):
         await query.edit_message_text(text=text, parse_mode="Markdown", reply_markup=kb)
 
 
-# ── /start ────────────────────────────────────────────────────
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     ref_by = None
 
-    if context.args:
-        try:
-            ref_by = int(context.args[0].replace("REF_", ""))
-            if ref_by != user.id:
-                try:
-                    await context.bot.send_message(
-                        chat_id=ref_by,
-                        text=(
-                            f"🎉 По вашей реферальной ссылке пришёл "
-                            f"{user.first_name} (@{user.username or 'без username'})!\n\n"
-                            f"Когда он оформит заказ — вы получите кешбэк *5000₽* 💰"
-                        ),
-                        parse_mode="Markdown",
-                    )
-                except:
-                    pass
-                for admin_id in ADMIN_IDS:
-                    try:
-                        await context.bot.send_message(
-                            chat_id=admin_id,
-                            text=(
-                                f"🔗 *Реферал!*\n"
-                                f"Пришёл: {user.first_name} (@{user.username or '—'}) | `{user.id}`\n"
-                                f"Пригласил: `{ref_by}`"
-                            ),
-                            parse_mode="Markdown",
-                        )
-                    except:
-                        pass
-        except:
-            pass
-
-    # Track source links
-    source = None
     if context.args:
         arg = context.args[0]
         if arg.startswith("SRC_"):
@@ -260,12 +221,41 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 source_stats[source] = []
             if user.id not in source_stats[source]:
                 source_stats[source].append(user.id)
+        elif arg.startswith("REF_"):
+            try:
+                ref_by = int(arg.replace("REF_", ""))
+                if ref_by != user.id:
+                    try:
+                        await context.bot.send_message(
+                            chat_id=ref_by,
+                            text=(
+                                "🎉 По вашей реферальной ссылке пришёл "
+                                f"{user.first_name} (@{user.username or 'без username'})!\n\n"
+                                "Когда он оформит заказ — вы получите кешбэк *5000₽* 💰"
+                            ),
+                            parse_mode="Markdown",
+                        )
+                    except:
+                        pass
+                    for admin_id in ADMIN_IDS:
+                        try:
+                            await context.bot.send_message(
+                                chat_id=admin_id,
+                                text=(
+                                    "🔗 *Реферал!*\n"
+                                    f"Пришёл: {user.first_name} (@{user.username or '—'}) | `{user.id}`\n"
+                                    f"Пригласил: `{ref_by}`"
+                                ),
+                                parse_mode="Markdown",
+                            )
+                        except:
+                            pass
+            except:
+                pass
 
     save_user(user.id, user.username or "", user.first_name or "", user.last_name or "", ref_by)
 
-    # Typing effect
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-    import asyncio
     await asyncio.sleep(1)
 
     if context.job_queue:
@@ -320,7 +310,6 @@ async def reminder_job(context: ContextTypes.DEFAULT_TYPE):
         print(f"Reminder error: {e}")
 
 
-# ── Кнопки ───────────────────────────────────────────────────
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -358,15 +347,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
              InlineKeyboardButton("📋 ПТС", callback_data="s_pts")],
             [InlineKeyboardButton("🏫 Документы автошколы", callback_data="s_avto")],
             [InlineKeyboardButton("🏥 Медицинские справки", callback_data="s_med")],
-            [InlineKeyboardButton("🎓 Дипломы | Высшее • Среднее", callback_data="s_diplom")],
+            [InlineKeyboardButton("🎓 Дипломы | Высшее / Среднее", callback_data="s_diplom")],
             [InlineKeyboardButton("◀️ Назад", callback_data="back")],
         ]
         await query.edit_message_caption(
-            caption=(
-                "📋 *Услуги Олега Сергеевича*\n"
-                "━━━━━━━━━━━━━━━━\n"
-                "Выберите интересующую услугу:"
-            ),
+            caption="📋 *Услуги Олега Сергеевича*\n━━━━━━━━━━━━━━━━\nВыберите интересующую услугу:",
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(kb),
         )
@@ -399,7 +384,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "📊 *Статус заявки*\n"
                     "━━━━━━━━━━━━━━━━\n"
                     "У вас пока нет активных заявок.\n\n"
-                    "Оформите заявку — и здесь\nпоявится статус!\n"
+                    "Оформите заявку — и здесь появится статус!\n"
                     "━━━━━━━━━━━━━━━━\n"
                     "📱 @OlegSergeevichGibdd"
                 ),
@@ -457,7 +442,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
-# ── /admin ────────────────────────────────────────────────────
 async def admin_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in ADMIN_IDS:
         await update.message.reply_text("❌ Нет доступа.")
@@ -490,9 +474,7 @@ async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         return ConversationHandler.END
 
     elif query.data == "adm_status":
-        await query.edit_message_text(
-            "👤 Введите @username или ID клиента:\n\n/cancel — отмена",
-        )
+        await query.edit_message_text("👤 Введите ID клиента (числовой):\n\n/cancel — отмена")
         context.user_data["admin_action"] = "status"
         return ADMIN_ENTER_USER
 
@@ -504,6 +486,29 @@ async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         context.user_data["admin_action"] = "broadcast"
         return ADMIN_ENTER_USER
 
+    elif query.data == "adm_links":
+        bot_info = await context.bot.get_me()
+        bot_username = bot_info.username
+        if not source_stats:
+            await query.edit_message_text(
+                "🔗 *Ссылки для отслеживания*\n"
+                "━━━━━━━━━━━━━━━━\n"
+                "Ссылок пока нет.\n\n"
+                "Введите название источника\n"
+                "(например: instagram, vk, kanal):\n\n"
+                "/cancel — отмена",
+                parse_mode="Markdown",
+            )
+        else:
+            text = "🔗 *Ссылки и статистика*\n━━━━━━━━━━━━━━━━\n"
+            for src, ids in source_stats.items():
+                link = f"t.me/{bot_username}?start=SRC_{src}"
+                text += f"📌 *{src}*: {len(ids)} чел.\n`{link}`\n\n"
+            text += "━━━━━━━━━━━━━━━━\nВведите название для новой ссылки:\n\n/cancel — отмена"
+            await query.edit_message_text(text[:4000], parse_mode="Markdown")
+        context.user_data["admin_action"] = "create_link"
+        return ADMIN_ENTER_USER
+
     elif query.data == "adm_subs":
         subs = get_subscribers()
         total = len(subs)
@@ -513,55 +518,25 @@ async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             name = (sub.get('first_name', '') + " " + sub.get('last_name', '')).strip() or "—"
             text += f"{i}. {name} | {username} | `{sub.get('tg_id', '')}`\n"
         if total > 30:
-            text += f"\n_...и ещё {total - 30}. Полный список в таблице._"
+            text += f"\n_...и ещё {total - 30}. Смотри таблицу._"
         await query.edit_message_text(text[:4000], parse_mode="Markdown")
         return ConversationHandler.END
-
-    elif query.data == "adm_links":
-        bot_info = await context.bot.get_me()
-        bot_username = bot_info.username
-        if not source_stats:
-            text = (
-                "🔗 *Ссылки для отслеживания*
-"
-                "━━━━━━━━━━━━━━━━
-"
-                "Ссылок пока нет.
-
-"
-                "Введите название источника
-"
-                "_(например: instagram, vk, канал)_:"
-            )
-            await query.edit_message_text(text, parse_mode="Markdown")
-            context.user_data["admin_action"] = "create_link"
-            return ADMIN_ENTER_USER
-        else:
-            text = "🔗 *Ссылки и статистика*
-━━━━━━━━━━━━━━━━
-"
-            for src, ids in source_stats.items():
-                link = f"t.me/{bot_username}?start=SRC_{src}"
-                text += f"📌 *{src}*: {len(ids)} чел.
-`{link}`
-
-"
-            text += "━━━━━━━━━━━━━━━━
-Введите название для новой ссылки:"
-            await query.edit_message_text(text[:4000], parse_mode="Markdown")
-            context.user_data["admin_action"] = "create_link"
-            return ADMIN_ENTER_USER
 
     elif query.data == "adm_stats":
         subs = get_subscribers()
         total = len(subs)
         active = len(user_statuses)
+        src_text = ""
+        for src, ids in source_stats.items():
+            src_text += f"  › {src}: {len(ids)} чел.\n"
         await query.edit_message_text(
-            f"📈 *Статистика*\n"
-            f"━━━━━━━━━━━━━━━━\n"
+            "📈 *Статистика*\n"
+            "━━━━━━━━━━━━━━━━\n"
             f"👥 Подписчиков: *{total}*\n"
             f"📊 Активных заявок: *{active}*\n"
-            f"━━━━━━━━━━━━━━━━",
+            f"🔗 Источников: *{len(source_stats)}*\n"
+            f"{src_text}"
+            "━━━━━━━━━━━━━━━━",
             parse_mode="Markdown",
         )
         return ConversationHandler.END
@@ -577,21 +552,13 @@ async def admin_enter_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         link = f"https://t.me/{bot_username}?start=SRC_{source_name}"
         count = len(source_stats.get(source_name, []))
         await update.message.reply_text(
-            f"✅ *Ссылка создана!*
-"
-            f"━━━━━━━━━━━━━━━━
-"
-            f"📌 Источник: *{source_name}*
-"
-            f"👥 Переходов: *{count}*
-"
-            f"━━━━━━━━━━━━━━━━
-"
-            f"🔗 Ваша ссылка:
-`{link}`
-
-"
-            f"_Скопируйте и разместите где нужно_",
+            "✅ *Ссылка создана!*\n"
+            "━━━━━━━━━━━━━━━━\n"
+            f"📌 Источник: *{source_name}*\n"
+            f"👥 Переходов: *{count}*\n"
+            "━━━━━━━━━━━━━━━━\n"
+            f"🔗 Ваша ссылка:\n`{link}`\n\n"
+            "_Скопируйте и разместите где нужно_",
             parse_mode="Markdown",
         )
         return ConversationHandler.END
@@ -609,7 +576,7 @@ async def admin_enter_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 await context.bot.send_message(
                     chat_id=int(sub["tg_id"]),
-                    text=f"📢 *Сообщение от Олега Сергеевича:*\n━━━━━━━━━━━━━━━━\n{text}",
+                    text="📢 *Сообщение от Олега Сергеевича:*\n━━━━━━━━━━━━━━━━\n" + text,
                     parse_mode="Markdown",
                 )
                 success += 1
@@ -689,13 +656,13 @@ async def admin_choose_status(update: Update, context: ContextTypes.DEFAULT_TYPE
         notify = f"⚠️ Не удалось уведомить: {e}"
 
     await query.edit_message_text(
-        f"✅ *Готово!*\n"
-        f"━━━━━━━━━━━━━━━━\n"
+        "✅ *Готово!*\n"
+        "━━━━━━━━━━━━━━━━\n"
         f"👤 Клиент: `{target}`\n"
         f"🗂 Услуга: {service}\n"
         f"📌 Статус: {label}\n"
         f"📶 `{progress}`\n"
-        f"━━━━━━━━━━━━━━━━\n"
+        "━━━━━━━━━━━━━━━━\n"
         f"{notify}",
         parse_mode="Markdown",
     )
@@ -707,7 +674,6 @@ async def admin_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 
-# ── /stats ────────────────────────────────────────────────────
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in ADMIN_IDS:
         await update.message.reply_text("❌ Нет доступа.")
@@ -732,7 +698,7 @@ async def services_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
          InlineKeyboardButton("📋 ПТС", callback_data="s_pts")],
         [InlineKeyboardButton("🏫 Документы автошколы", callback_data="s_avto")],
         [InlineKeyboardButton("🏥 Медицинские справки", callback_data="s_med")],
-        [InlineKeyboardButton("🎓 Дипломы | Высшее • Среднее", callback_data="s_diplom")],
+        [InlineKeyboardButton("🎓 Дипломы | Высшее / Среднее", callback_data="s_diplom")],
     ]
     await update.message.reply_text(
         "📋 *Услуги Олега Сергеевича*\n━━━━━━━━━━━━━━━━\nВыберите услугу:",
@@ -758,7 +724,7 @@ async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         status_text = STATUS_LABELS.get(s["status"], s["status"])
         progress = STATUS_PROGRESS.get(s["status"], "")
         await update.message.reply_text(
-            f"📊 *Статус заявки*\n━━━━━━━━━━━━━━━━\n"
+            "📊 *Статус заявки*\n━━━━━━━━━━━━━━━━\n"
             f"🗂 Услуга: {s['service']}\n"
             f"📌 Статус: {status_text}\n"
             f"📶 `{progress}`\n"
