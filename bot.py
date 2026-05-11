@@ -468,7 +468,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text += f"{i}. {name} | {username} | `{sub.get('tg_id', '')}`\n"
     if total > 50:
         text += f"\n_...и ещё {total - 50}. Смотри таблицу._"
-    await update.message.reply_text(text, parse_mode="Markdown")
+    await update.message.reply_text(text[:4000], parse_mode="Markdown")
 
 
 # ── Запуск ────────────────────────────────────────────────────
