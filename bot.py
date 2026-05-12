@@ -434,19 +434,21 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]),
         )
 
-    elif query.data == "reviews":
+elif query.data == "reviews":
         await query.edit_message_caption(
             caption=(
-                "⭐ *Отзывы клиентов*\n"
+                "⭐ *Отзывы*\n"
                 "━━━━━━━━━━━━━━━━\n"
-"Отзывы предоставляю лично по запросу.\n\n"
-"В открытый доступ не выкладываю —\n"
-"работаю конфиденциально с каждым клиентом.\n\n"
-"📩 Напишите мне лично — отвечу и покажу!\n"
-"━━━━━━━━━━━━━━━━\n"
-"📱 @OlegSergeevichGibdd"
-"━━━━━━━━━━━━━━━━"
+                "🤝 Работаю конфиденциально — отзывы показываю лично по запросу.\n\n"
+                "Напишите мне 👇\n"
+                "━━━━━━━━━━━━━━━━"
             ),
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("✍️ Написать Олегу Сергеевичу", url="https://t.me/OlegSergeevichGibdd")],
+                [InlineKeyboardButton("◀️ Назад", callback_data="back")],
+            ]),
+        )
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="back")]]),
         )
