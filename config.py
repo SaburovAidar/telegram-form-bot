@@ -11,4 +11,4 @@ CHARACTER_DESCRIPTION = (
     "🏥 Медицинские справки\n"
     "⚡ Оперативно и надёжно"
 )
-CHARACTER_IMAGE_URL   = "https://i.postimg.cc/RFchq1RP/image.png"
+CHARACTER_IMAGE_URL   = "https://i.postimg.cc/QM9p9mhJ/111.jpg"
