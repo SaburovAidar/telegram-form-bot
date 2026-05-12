@@ -439,15 +439,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             caption=(
                 "⭐ *Отзывы клиентов*\n"
                 "━━━━━━━━━━━━━━━━\n"
-                "⭐ *Отзывы клиентов*\n"
-"━━━━━━━━━━━━━━━━\n"
 "Отзывы предоставляю лично по запросу.\n\n"
 "В открытый доступ не выкладываю —\n"
 "работаю конфиденциально с каждым клиентом.\n\n"
 "📩 Напишите мне лично — отвечу и покажу!\n"
 "━━━━━━━━━━━━━━━━\n"
 "📱 @OlegSergeevichGibdd"
-                "━━━━━━━━━━━━━━━━"
+"━━━━━━━━━━━━━━━━"
             ),
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="back")]]),
