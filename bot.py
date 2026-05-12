@@ -8,7 +8,6 @@ from telegram.ext import (
     ApplicationBuilder, CommandHandler, CallbackQueryHandler,
     MessageHandler, ContextTypes, filters, ConversationHandler
 )
-from telegram.constants import ChatAction
 from config import BOT_TOKEN, CHARACTER_NAME, CHARACTER_DESCRIPTION, CHARACTER_IMAGE_URL, APPS_SCRIPT_URL
 
 logging.basicConfig(format="%(asctime)s | %(levelname)s | %(message)s", level=logging.INFO)
@@ -18,7 +17,7 @@ ADMIN_IDS = [7984349049, 8485739966]
 ADMIN_ENTER_USER, ADMIN_CHOOSE_SERVICE, ADMIN_CHOOSE_STATUS = range(3)
 
 user_statuses = {}
-source_stats = {}  # {source_name: [tg_ids]}
+source_stats = {}
 
 STATUSES = [
     ("📥 Документы приняты в работу", "accepted"),
@@ -150,7 +149,6 @@ def get_greeting(name):
     return phrase + "\n_" + time_g + "!_"
 
 
-# ── Google Sheets ─────────────────────────────────────────────
 def save_user(tg_id, username, first_name, last_name, ref_by=None, source=None):
     try:
         requests.post(APPS_SCRIPT_URL, json={
@@ -196,7 +194,6 @@ def load_sources():
         logger.error(f"load_sources error: {e}")
 
 
-# ── Меню ─────────────────────────────────────────────────────
 def main_menu():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📋 Услуги", callback_data="services"),
@@ -233,7 +230,6 @@ async def send_service(query, key):
         await query.edit_message_text(text=text, parse_mode="Markdown", reply_markup=order_kb())
 
 
-# ── /start ────────────────────────────────────────────────────
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     ref_by = None
@@ -256,11 +252,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     try:
                         await context.bot.send_message(
                             chat_id=ref_by,
-                            text=(
-                                "🎉 По вашей реферальной ссылке пришёл "
-                                + user.first_name + "!\n\n"
-                                "Когда он оформит заказ — вы получите кешбэк *5000 руб* 💰"
-                            ),
+                            text="🎉 По вашей реферальной ссылке пришёл " + user.first_name + "!\n\nКогда он оформит заказ — вы получите кешбэк *5000 руб* 💰",
                             parse_mode="Markdown",
                         )
                     except:
@@ -269,11 +261,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         try:
                             await context.bot.send_message(
                                 chat_id=admin_id,
-                                text=(
-                                    "🔗 *Реферал!*\n"
-                                    "Пришёл: " + user.first_name + " (@" + (user.username or "—") + ") | `" + str(user.id) + "`\n"
-                                    "Пригласил: `" + str(ref_by) + "`"
-                                ),
+                                text="🔗 *Реферал!*\nПришёл: " + user.first_name + " (@" + (user.username or "—") + ") | `" + str(user.id) + "`\nПригласил: `" + str(ref_by) + "`",
                                 parse_mode="Markdown",
                             )
                         except:
@@ -334,7 +322,6 @@ async def reminder_job(context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Reminder error: {e}")
 
 
-# ── Кнопки ───────────────────────────────────────────────────
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -434,7 +421,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]),
         )
 
-elif query.data == "reviews":
+    elif query.data == "reviews":
         await query.edit_message_caption(
             caption=(
                 "⭐ *Отзывы*\n"
@@ -448,9 +435,6 @@ elif query.data == "reviews":
                 [InlineKeyboardButton("✍️ Написать Олегу Сергеевичу", url="https://t.me/OlegSergeevichGibdd")],
                 [InlineKeyboardButton("◀️ Назад", callback_data="back")],
             ]),
-        )
-            parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="back")]]),
         )
 
     elif query.data == "referral":
@@ -471,7 +455,6 @@ elif query.data == "reviews":
         )
 
 
-# ── Админ панель ─────────────────────────────────────────────
 async def admin_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in ADMIN_IDS:
         await update.message.reply_text("❌ Нет доступа.")
