@@ -411,8 +411,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "📞 *Связаться*\n"
                 "━━━━━━━━━━━━━━━━\n"
                 "Напишите напрямую — отвечаем быстро!\n\n"
-                "Среднее время ответа: *до 15 минут*\n"
                 "📱 @OlegSergeevichGibdd"
+                "Среднее время ответа: *до 15 минут*\n"
                 "━━━━━━━━━━━━━━━━"
             ),
             parse_mode="Markdown",
