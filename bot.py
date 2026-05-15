@@ -302,8 +302,7 @@ async def show_subs_page(query, page=0):
     kb.append([InlineKeyboardButton("◀️ В меню", callback_data="adm_close")])
 
     await query.edit_message_text(
-        text + "━━━━━━━━━━━━━━━━",
-        parse_mode="Markdown",
+        text + "─────────────────",
         reply_markup=InlineKeyboardMarkup(kb),
     )
 
