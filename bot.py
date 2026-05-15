@@ -18,6 +18,10 @@ ADMIN_ENTER_USER, ADMIN_CHOOSE_SERVICE, ADMIN_CHOOSE_STATUS = range(3)
 
 user_statuses = {}
 source_stats = {}
+analytics = {}  # {action: count}
+
+def track(action):
+    analytics[action] = analytics.get(action, 0) + 1
 
 STATUSES = [
     ("📥 Документы приняты в работу", "accepted"),
@@ -330,6 +334,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     user = query.from_user
 
+    track(query.data)
+
     if query.data == "back":
         greeting = get_greeting(user.first_name)
         caption = (
@@ -584,19 +590,46 @@ async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         subs = get_subscribers()
         total = len(subs)
         active = len(user_statuses)
+
+        # Sources
         src_text = ""
         for src, ids in source_stats.items():
             src_text += "  › " + src + ": " + str(len(ids)) + " чел.\n"
-        await query.edit_message_text(
+
+        # Analytics - map keys to names
+        names = {
+            "services": "📋 Открыли услуги",
+            "s_vu": "🪪 Водительские права",
+            "s_traktor": "🚜 Тракторные права",
+            "s_sts": "📄 СТС",
+            "s_pts": "📋 ПТС",
+            "s_avto": "🏫 Автошкола",
+            "s_med": "🏥 Мед справка",
+            "s_diplom": "🎓 Диплом",
+            "contact": "📞 Связаться",
+            "check_rights": "🔍 Проверить права",
+            "reviews": "⭐ Отзывы",
+            "referral": "👥 Реферал",
+            "my_status": "📊 Мой статус",
+        }
+        sorted_analytics = sorted(analytics.items(), key=lambda x: x[1], reverse=True)
+        analytics_text = ""
+        for key, count in sorted_analytics[:10]:
+            name = names.get(key, key)
+            analytics_text += "  › " + name + ": " + str(count) + " раз\n"
+
+        text = (
             "📈 *Статистика*\n"
             "━━━━━━━━━━━━━━━━\n"
             "👥 Подписчиков: *" + str(total) + "*\n"
             "📊 Активных заявок: *" + str(active) + "*\n"
-            "🔗 Источников: *" + str(len(source_stats)) + "*\n"
-            + src_text +
-            "━━━━━━━━━━━━━━━━",
-            parse_mode="Markdown",
+            "━━━━━━━━━━━━━━━━\n"
+            "🔥 *Топ действий:*\n" + (analytics_text or "  Данных пока нет\n") +
+            "━━━━━━━━━━━━━━━━\n"
+            "🔗 *Источники:*\n" + (src_text or "  Нет данных\n") +
+            "━━━━━━━━━━━━━━━━"
         )
+        await query.edit_message_text(text, parse_mode="Markdown")
         return ConversationHandler.END
 
 
