@@ -135,6 +135,8 @@ GREETINGS = [
     "{name}, на связи Олег Сергеевич!",
 ]
 
+GIBDD_URL = "https://xn----8sbgbnrbpzfdotgl5e9h.xn--p1ai/"
+
 def get_greeting(name):
     hour = datetime.now().hour
     if 5 <= hour < 12:
@@ -200,6 +202,7 @@ def main_menu():
          InlineKeyboardButton("📊 Мой статус", callback_data="my_status")],
         [InlineKeyboardButton("📞 Связаться", callback_data="contact"),
          InlineKeyboardButton("⭐ Отзывы", callback_data="reviews")],
+        [InlineKeyboardButton("🔍 Проверить права", callback_data="check_rights")],
         [InlineKeyboardButton("👥 Пригласить друга", callback_data="referral")],
     ])
 
@@ -411,7 +414,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "📞 *Связаться*\n"
                 "━━━━━━━━━━━━━━━━\n"
                 "Напишите напрямую — отвечаем быстро!\n\n"
-                "📱 @OlegSergeevichGibdd"
                 "Среднее время ответа: *до 15 минут*\n"
                 "━━━━━━━━━━━━━━━━"
             ),
@@ -434,6 +436,23 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("✍️ Написать Олегу Сергеевичу", url="https://t.me/OlegSergeevichGibdd")],
+                [InlineKeyboardButton("◀️ Назад", callback_data="back")],
+            ]),
+        )
+
+    elif query.data == "check_rights":
+        await query.edit_message_caption(
+            caption=(
+                "🔍 *Проверка водительских прав*\n"
+                "━━━━━━━━━━━━━━━━\n"
+                "Проверьте подлинность водительского удостоверения\n"
+                "на официальном сайте ГИБДД.\n\n"
+                "Сайт: [гос-автоинспекция.рф](" + GIBDD_URL + ")\n"
+                "━━━━━━━━━━━━━━━━"
+            ),
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🌐 Перейти на сайт ГИБДД", url=GIBDD_URL)],
                 [InlineKeyboardButton("◀️ Назад", callback_data="back")],
             ]),
         )
@@ -494,10 +513,13 @@ async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     elif query.data == "adm_broadcast":
         await query.edit_message_text(
-            "📢 *Рассылка*\n\nНапишите текст сообщения:\n\n/cancel — отмена",
+            "📢 *Рассылка*\n━━━━━━━━━━━━━━━━\n"
+            "Отправьте фото для рассылки\n"
+            "или /skip чтобы без фото\n\n"
+            "/cancel — отмена",
             parse_mode="Markdown",
         )
-        context.user_data["admin_action"] = "broadcast"
+        context.user_data["admin_action"] = "broadcast_photo"
         return ADMIN_ENTER_USER
 
     elif query.data == "adm_links":
@@ -581,7 +603,51 @@ async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def admin_enter_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     action = context.user_data.get("admin_action")
 
-    if action == "create_link":
+    if action == "broadcast_photo":
+        if update.message.photo:
+            context.user_data["broadcast_photo"] = update.message.photo[-1].file_id
+            await update.message.reply_text("✅ Фото получено! Теперь напишите текст:\n\n/cancel — отмена")
+        else:
+            await update.message.reply_text("📝 Напишите текст для рассылки:\n\n/cancel — отмена")
+        context.user_data["admin_action"] = "broadcast_text"
+        return ADMIN_ENTER_USER
+
+    elif action == "broadcast_text":
+        text = update.message.text
+        photo = context.user_data.get("broadcast_photo")
+        subs = get_subscribers()
+        if not subs:
+            await update.message.reply_text("❌ Нет подписчиков.")
+            return ConversationHandler.END
+        msg = await update.message.reply_text("📤 Отправляю " + str(len(subs)) + " подписчикам...")
+        success = 0
+        fail = 0
+        for sub in subs:
+            try:
+                if photo:
+                    await context.bot.send_photo(
+                        chat_id=int(sub["tg_id"]),
+                        photo=photo,
+                        caption="📢 *Сообщение от Олега Сергеевича:*\n━━━━━━━━━━━━━━━━\n" + text,
+                        parse_mode="Markdown",
+                    )
+                else:
+                    await context.bot.send_message(
+                        chat_id=int(sub["tg_id"]),
+                        text="📢 *Сообщение от Олега Сергеевича:*\n━━━━━━━━━━━━━━━━\n" + text,
+                        parse_mode="Markdown",
+                    )
+                success += 1
+            except:
+                fail += 1
+        context.user_data.pop("broadcast_photo", None)
+        await msg.edit_text(
+            "✅ *Рассылка завершена!*\n\n📨 Отправлено: " + str(success) + "\n❌ Не доставлено: " + str(fail),
+            parse_mode="Markdown",
+        )
+        return ConversationHandler.END
+
+    elif action == "create_link":
         source_name = update.message.text.strip().lower().replace(" ", "_")
         if source_name not in source_stats:
             source_stats[source_name] = []
@@ -600,31 +666,6 @@ async def admin_enter_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "_Скопируйте и разместите где нужно_",
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(kb),
-        )
-        return ConversationHandler.END
-
-    elif action == "broadcast":
-        text = update.message.text
-        subs = get_subscribers()
-        if not subs:
-            await update.message.reply_text("❌ Нет подписчиков.")
-            return ConversationHandler.END
-        msg = await update.message.reply_text("📤 Отправляю " + str(len(subs)) + " подписчикам...")
-        success = 0
-        fail = 0
-        for sub in subs:
-            try:
-                await context.bot.send_message(
-                    chat_id=int(sub["tg_id"]),
-                    text="📢 *Сообщение от Олега Сергеевича:*\n━━━━━━━━━━━━━━━━\n" + text,
-                    parse_mode="Markdown",
-                )
-                success += 1
-            except:
-                fail += 1
-        await msg.edit_text(
-            "✅ *Рассылка завершена!*\n\n📨 Отправлено: " + str(success) + "\n❌ Не доставлено: " + str(fail),
-            parse_mode="Markdown",
         )
         return ConversationHandler.END
 
@@ -710,6 +751,16 @@ async def admin_choose_status(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 async def admin_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("❌ Отменено.")
+    return ConversationHandler.END
+
+
+async def admin_skip(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data.get("admin_action") == "broadcast_photo":
+        context.user_data.pop("broadcast_photo", None)
+        context.user_data["admin_action"] = "broadcast_text"
+        await update.message.reply_text("📝 Без фото. Напишите текст:\n\n/cancel — отмена")
+        return ADMIN_ENTER_USER
     await update.message.reply_text("❌ Отменено.")
     return ConversationHandler.END
 
@@ -808,6 +859,7 @@ def main():
         ],
         states={
             ADMIN_ENTER_USER: [
+                MessageHandler(filters.PHOTO, admin_enter_user),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, admin_enter_user),
                 CallbackQueryHandler(admin_panel_handler, pattern="^adm_"),
             ],
@@ -820,7 +872,10 @@ def main():
                 CallbackQueryHandler(admin_choose_status, pattern="^adm_close"),
             ],
         },
-        fallbacks=[CommandHandler("cancel", admin_cancel)],
+        fallbacks=[
+            CommandHandler("cancel", admin_cancel),
+            CommandHandler("skip", admin_skip),
+        ],
         allow_reentry=True,
     )
 
