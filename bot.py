@@ -299,6 +299,7 @@ async def show_subs_page(query, page=0):
     if page < total_pages - 1:
         nav.append(InlineKeyboardButton("▶️", callback_data="adm_pg_" + str(page + 1)))
     kb.append(nav)
+    kb.append([InlineKeyboardButton("🔍 Поиск по ID или @username", callback_data="adm_search")])
     kb.append([InlineKeyboardButton("◀️ В меню", callback_data="adm_close")])
 
     await query.edit_message_text(
@@ -664,6 +665,17 @@ async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         return ADMIN_CHOOSE_SERVICE
 
+    elif query.data == "adm_search":
+        await query.edit_message_text(
+            "🔍 Поиск подписчика\n"
+            "─────────────────\n"
+            "Введите TG ID или @username:\n\n"
+            "/cancel — отмена",
+        )
+        context.user_data["admin_action"] = "search_user"
+        return ADMIN_ENTER_USER
+
+
     elif query.data == "adm_links":
         load_sources()
         bot_info = await context.bot.get_me()
@@ -742,7 +754,57 @@ async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def admin_enter_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     action = context.user_data.get("admin_action")
 
-    if action == "broadcast_photo":
+    if action == "search_user":
+        query_text = update.message.text.strip().replace("@", "")
+        subs = get_subscribers()
+        sub = None
+        for s in subs:
+            if str(s.get("tg_id", "")) == query_text or s.get("username", "").lower() == query_text.lower():
+                sub = s
+                break
+        if not sub:
+            await update.message.reply_text("❌ Не найден. Попробуйте другой ID или @username.")
+            return ADMIN_ENTER_USER
+
+        tg_id = str(sub.get("tg_id", ""))
+        name = escape((sub.get("first_name", "") + " " + sub.get("last_name", "")).strip() or "—")
+        username = "@" + sub["username"] if sub.get("username") else "—"
+        source = escape(sub.get("source", "") or "—")
+        status = user_statuses.get(tg_id, {})
+        status_text = STATUS_LABELS.get(status.get("status", ""), "Нет заявки")
+
+        user_acts = user_analytics.get(tg_id, {})
+        acts_text = ""
+        if user_acts:
+            sorted_acts = sorted(user_acts.items(), key=lambda x: x[1], reverse=True)
+            for act_key, act_count in sorted_acts[:8]:
+                act_name = ACTION_NAMES.get(act_key, act_key)
+                acts_text += "  > " + act_name + ": " + str(act_count) + " раз\n"
+        else:
+            acts_text = "  Нет данных\n"
+
+        kb = []
+        if sub.get("username"):
+            kb.append([InlineKeyboardButton("✍️ Написать", url="https://t.me/" + sub["username"])])
+        kb.append([InlineKeyboardButton("📊 Изменить статус", callback_data="adm_setstatus_" + tg_id)])
+        kb.append([InlineKeyboardButton("◀️ К подписчикам", callback_data="adm_subs")])
+
+        await update.message.reply_text(
+            "👤 " + name + " | " + username + "\n"
+            "─────────────────\n"
+            "ID: " + tg_id + "\n"
+            "Дата: " + str(sub.get("date", "—")) + "\n"
+            "Источник: " + source + "\n"
+            "Статус: " + status_text + "\n"
+            "─────────────────\n"
+            "Активность:\n" + acts_text +
+            "─────────────────",
+            reply_markup=InlineKeyboardMarkup(kb),
+        )
+        return ConversationHandler.END
+
+
+    elif action == "broadcast_photo":
         if update.message.photo:
             context.user_data["broadcast_photo"] = update.message.photo[-1].file_id
             await update.message.reply_text("✅ Фото получено! Теперь напишите текст:\n\n/cancel — отмена")
