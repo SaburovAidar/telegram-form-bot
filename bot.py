@@ -156,6 +156,15 @@ GREETINGS = [
 GIBDD_URL = "https://xn----8sbgbnrbpzfdotgl5e9h.xn--p1ai/"
 
 
+def escape(text):
+    if not text:
+        return "—"
+    special = ["*", "_", "`", "[", "]"]
+    for ch in special:
+        text = text.replace(ch, "")
+    return text
+
+
 def track(action, user_id=None):
     analytics[action] = analytics.get(action, 0) + 1
     if user_id:
@@ -273,10 +282,11 @@ async def show_subs_page(query, page=0):
     text = "👥 *Подписчики: " + str(total) + "*\n━━━━━━━━━━━━━━━━\n"
     kb = []
     for i, sub in enumerate(page_subs, start + 1):
-        name = (sub.get("first_name", "") + " " + sub.get("last_name", "")).strip() or "—"
+        name = escape((sub.get("first_name", "") + " " + sub.get("last_name", "")).strip())
         username = "@" + sub["username"] if sub.get("username") else "—"
         text += str(i) + ". " + name + " | " + username + "\n"
-        short_name = name[:18]
+        raw_name = (sub.get("first_name", "") + " " + sub.get("last_name", "")).strip() or "—"
+        short_name = raw_name[:18]
         kb.append([InlineKeyboardButton(
             str(i) + ". " + short_name,
             callback_data="adm_usr_" + str(sub.get("tg_id", ""))
@@ -606,9 +616,9 @@ async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             await query.edit_message_text("❌ Пользователь не найден.")
             return ADMIN_ENTER_USER
 
-        name = (sub.get("first_name", "") + " " + sub.get("last_name", "")).strip() or "—"
+        name = escape((sub.get("first_name", "") + " " + sub.get("last_name", "")).strip() or "—")
         username = "@" + sub["username"] if sub.get("username") else "—"
-        source = sub.get("source", "") or "—"
+        source = escape(sub.get("source", "") or "—")
         status = user_statuses.get(tg_id, {})
         status_text = STATUS_LABELS.get(status.get("status", ""), "Нет заявки")
 
