@@ -18,16 +18,8 @@ ADMIN_ENTER_USER, ADMIN_CHOOSE_SERVICE, ADMIN_CHOOSE_STATUS = range(3)
 
 user_statuses = {}
 source_stats = {}
-analytics = {}  # {action: count}
-user_analytics = {}  # {tg_id: {action: count}}
-
-def track(action, user_id=None):
-    analytics[action] = analytics.get(action, 0) + 1
-    if user_id:
-        uid = str(user_id)
-        if uid not in user_analytics:
-            user_analytics[uid] = {}
-        user_analytics[uid][action] = user_analytics[uid].get(action, 0) + 1
+analytics = {}
+user_analytics = {}
 
 STATUSES = [
     ("📥 Документы приняты в работу", "accepted"),
@@ -46,6 +38,22 @@ STATUS_PROGRESS = {
     "done":       "▓▓▓▓▓▓ 100% ✅",
 }
 STATUS_LABELS = {s[1]: s[0] for s in STATUSES}
+
+ACTION_NAMES = {
+    "services": "📋 Открыл услуги",
+    "s_vu": "🪪 Водительские права",
+    "s_traktor": "🚜 Тракторные права",
+    "s_sts": "📄 СТС",
+    "s_pts": "📋 ПТС",
+    "s_avto": "🏫 Автошкола",
+    "s_med": "🏥 Мед справка",
+    "s_diplom": "🎓 Диплом",
+    "contact": "📞 Связаться",
+    "check_rights": "🔍 Проверить права",
+    "reviews": "⭐ Отзывы",
+    "referral": "👥 Реферал",
+    "my_status": "📊 Мой статус",
+}
 
 SERVICES_LIST = [
     "🪪 Водительские удостоверения",
@@ -147,6 +155,16 @@ GREETINGS = [
 
 GIBDD_URL = "https://xn----8sbgbnrbpzfdotgl5e9h.xn--p1ai/"
 
+
+def track(action, user_id=None):
+    analytics[action] = analytics.get(action, 0) + 1
+    if user_id:
+        uid = str(user_id)
+        if uid not in user_analytics:
+            user_analytics[uid] = {}
+        user_analytics[uid][action] = user_analytics[uid].get(action, 0) + 1
+
+
 def get_greeting(name):
     hour = datetime.now().hour
     if 5 <= hour < 12:
@@ -241,6 +259,43 @@ async def send_service(query, key):
         await query.edit_message_caption(caption=text, parse_mode="Markdown", reply_markup=order_kb())
     except:
         await query.edit_message_text(text=text, parse_mode="Markdown", reply_markup=order_kb())
+
+
+async def show_subs_page(query, page=0):
+    subs = get_subscribers()
+    total = len(subs)
+    per_page = 10
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    page = max(0, min(page, total_pages - 1))
+    start = page * per_page
+    page_subs = subs[start:start + per_page]
+
+    text = "👥 *Подписчики: " + str(total) + "*\n━━━━━━━━━━━━━━━━\n"
+    kb = []
+    for i, sub in enumerate(page_subs, start + 1):
+        name = (sub.get("first_name", "") + " " + sub.get("last_name", "")).strip() or "—"
+        username = "@" + sub["username"] if sub.get("username") else "—"
+        text += str(i) + ". " + name + " | " + username + "\n"
+        short_name = name[:18]
+        kb.append([InlineKeyboardButton(
+            str(i) + ". " + short_name,
+            callback_data="adm_usr_" + str(sub.get("tg_id", ""))
+        )])
+
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("◀️", callback_data="adm_pg_" + str(page - 1)))
+    nav.append(InlineKeyboardButton(str(page + 1) + "/" + str(total_pages), callback_data="adm_pg_" + str(page)))
+    if page < total_pages - 1:
+        nav.append(InlineKeyboardButton("▶️", callback_data="adm_pg_" + str(page + 1)))
+    kb.append(nav)
+    kb.append([InlineKeyboardButton("◀️ В меню", callback_data="adm_close")])
+
+    await query.edit_message_text(
+        text + "━━━━━━━━━━━━━━━━",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(kb),
+    )
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -534,6 +589,72 @@ async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         context.user_data["admin_action"] = "broadcast_photo"
         return ADMIN_ENTER_USER
 
+    elif query.data == "adm_subs":
+        await show_subs_page(query, 0)
+        return ADMIN_ENTER_USER
+
+    elif query.data.startswith("adm_pg_"):
+        page = int(query.data.replace("adm_pg_", ""))
+        await show_subs_page(query, page)
+        return ADMIN_ENTER_USER
+
+    elif query.data.startswith("adm_usr_"):
+        tg_id = query.data.replace("adm_usr_", "")
+        subs = get_subscribers()
+        sub = next((s for s in subs if str(s.get("tg_id", "")) == tg_id), None)
+        if not sub:
+            await query.edit_message_text("❌ Пользователь не найден.")
+            return ADMIN_ENTER_USER
+
+        name = (sub.get("first_name", "") + " " + sub.get("last_name", "")).strip() or "—"
+        username = "@" + sub["username"] if sub.get("username") else "—"
+        source = sub.get("source", "") or "—"
+        status = user_statuses.get(tg_id, {})
+        status_text = STATUS_LABELS.get(status.get("status", ""), "Нет заявки")
+
+        user_acts = user_analytics.get(tg_id, {})
+        acts_text = ""
+        if user_acts:
+            sorted_acts = sorted(user_acts.items(), key=lambda x: x[1], reverse=True)
+            for act_key, act_count in sorted_acts[:8]:
+                act_name = ACTION_NAMES.get(act_key, act_key)
+                acts_text += "  › " + act_name + ": " + str(act_count) + " раз\n"
+        else:
+            acts_text = "  Нет данных (зашёл но ничего не нажимал)\n"
+
+        kb = []
+        if sub.get("username"):
+            kb.append([InlineKeyboardButton("✍️ Написать", url="https://t.me/" + sub["username"])])
+        kb.append([InlineKeyboardButton("📊 Изменить статус", callback_data="adm_setstatus_" + tg_id)])
+        kb.append([InlineKeyboardButton("◀️ Назад", callback_data="adm_subs")])
+
+        await query.edit_message_text(
+            "👤 *" + name + "* | " + username + "\n"
+            "━━━━━━━━━━━━━━━━\n"
+            "🆔 ID: `" + tg_id + "`\n"
+            "📅 Дата: " + str(sub.get("date", "—")) + "\n"
+            "🔗 Источник: " + source + "\n"
+            "📊 Статус: " + status_text + "\n"
+            "━━━━━━━━━━━━━━━━\n"
+            "🖱 *Активность:*\n" + acts_text +
+            "━━━━━━━━━━━━━━━━",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(kb),
+        )
+        return ADMIN_ENTER_USER
+
+    elif query.data.startswith("adm_setstatus_"):
+        tg_id = query.data.replace("adm_setstatus_", "")
+        context.user_data["target"] = tg_id
+        kb = [[InlineKeyboardButton(s, callback_data="admsvc_" + str(i))] for i, s in enumerate(SERVICES_LIST)]
+        kb.append([InlineKeyboardButton("❌ Отмена", callback_data="adm_close")])
+        await query.edit_message_text(
+            "🗂 Выберите услугу для клиента `" + tg_id + "`:",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(kb),
+        )
+        return ADMIN_CHOOSE_SERVICE
+
     elif query.data == "adm_links":
         load_sources()
         bot_info = await context.bot.get_me()
@@ -579,52 +700,22 @@ async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         return ADMIN_ENTER_USER
 
-    elif query.data == "adm_subs":
-        subs = get_subscribers()
-        total = len(subs)
-        text = "👥 *Подписчики: " + str(total) + "*\n━━━━━━━━━━━━━━━━\n"
-        for i, sub in enumerate(subs[:30], 1):
-            username = "@" + sub["username"] if sub.get("username") else "—"
-            name = (sub.get("first_name", "") + " " + sub.get("last_name", "")).strip() or "—"
-            text += str(i) + ". " + name + " | " + username + " | `" + sub.get("tg_id", "") + "`\n"
-        if total > 30:
-            text += "\n_...и ещё " + str(total - 30) + ". Смотри таблицу._"
-        await query.edit_message_text(text[:4000], parse_mode="Markdown")
-        return ConversationHandler.END
-
     elif query.data == "adm_stats":
         subs = get_subscribers()
         total = len(subs)
         active = len(user_statuses)
 
-        # Sources
+        sorted_analytics = sorted(analytics.items(), key=lambda x: x[1], reverse=True)
+        analytics_text = ""
+        for key, count in sorted_analytics[:10]:
+            name = ACTION_NAMES.get(key, key)
+            analytics_text += "  › " + name + ": " + str(count) + " раз\n"
+
         src_text = ""
         for src, ids in source_stats.items():
             src_text += "  › " + src + ": " + str(len(ids)) + " чел.\n"
 
-        # Analytics - map keys to names
-        names = {
-            "services": "📋 Открыли услуги",
-            "s_vu": "🪪 Водительские права",
-            "s_traktor": "🚜 Тракторные права",
-            "s_sts": "📄 СТС",
-            "s_pts": "📋 ПТС",
-            "s_avto": "🏫 Автошкола",
-            "s_med": "🏥 Мед справка",
-            "s_diplom": "🎓 Диплом",
-            "contact": "📞 Связаться",
-            "check_rights": "🔍 Проверить права",
-            "reviews": "⭐ Отзывы",
-            "referral": "👥 Реферал",
-            "my_status": "📊 Мой статус",
-        }
-        sorted_analytics = sorted(analytics.items(), key=lambda x: x[1], reverse=True)
-        analytics_text = ""
-        for key, count in sorted_analytics[:10]:
-            name = names.get(key, key)
-            analytics_text += "  › " + name + ": " + str(count) + " раз\n"
-
-        text = (
+        await query.edit_message_text(
             "📈 *Статистика*\n"
             "━━━━━━━━━━━━━━━━\n"
             "👥 Подписчиков: *" + str(total) + "*\n"
@@ -633,9 +724,9 @@ async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             "🔥 *Топ действий:*\n" + (analytics_text or "  Данных пока нет\n") +
             "━━━━━━━━━━━━━━━━\n"
             "🔗 *Источники:*\n" + (src_text or "  Нет данных\n") +
-            "━━━━━━━━━━━━━━━━"
+            "━━━━━━━━━━━━━━━━",
+            parse_mode="Markdown",
         )
-        await query.edit_message_text(text, parse_mode="Markdown")
         return ConversationHandler.END
 
 
