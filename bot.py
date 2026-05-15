@@ -19,9 +19,15 @@ ADMIN_ENTER_USER, ADMIN_CHOOSE_SERVICE, ADMIN_CHOOSE_STATUS = range(3)
 user_statuses = {}
 source_stats = {}
 analytics = {}  # {action: count}
+user_analytics = {}  # {tg_id: {action: count}}
 
-def track(action):
+def track(action, user_id=None):
     analytics[action] = analytics.get(action, 0) + 1
+    if user_id:
+        uid = str(user_id)
+        if uid not in user_analytics:
+            user_analytics[uid] = {}
+        user_analytics[uid][action] = user_analytics[uid].get(action, 0) + 1
 
 STATUSES = [
     ("📥 Документы приняты в работу", "accepted"),
@@ -334,7 +340,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     user = query.from_user
 
-    track(query.data)
+    track(query.data, user.id)
 
     if query.data == "back":
         greeting = get_greeting(user.first_name)
