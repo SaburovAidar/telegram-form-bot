@@ -522,14 +522,18 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             caption=(
                 "🔍 *Проверка водительских прав*\n"
                 "━━━━━━━━━━━━━━━━\n"
-                "Проверьте подлинность водительского удостоверения\n"
-                "на официальном сайте ГИБДД.\n\n"
-                "Сайт: [гос-автоинспекция.рф](" + GIBDD_URL + ")\n"
+                "Проверьте подлинность удостоверения\n"
+                "на официальных сайтах:\n\n"
+                "› гос-автоинспекция.net\n"
+                "› gibdd.news\n"
+                "› госавтоинспекция.org\n"
                 "━━━━━━━━━━━━━━━━"
             ),
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🌐 Перейти на сайт ГИБДД", url=GIBDD_URL)],
+                [InlineKeyboardButton("🌐 гос-автоинспекция.net", url="https://xn----8sbgbnrbpzfdotgl5e9h.net/")],
+                [InlineKeyboardButton("🌐 gibdd.news", url="https://gibdd.news/")],
+                [InlineKeyboardButton("🌐 госавтоинспекция.org", url="https://xn--80aebkobnwfcnsfk1e0h.org/")],
                 [InlineKeyboardButton("◀️ Назад", callback_data="back")],
             ]),
         )
