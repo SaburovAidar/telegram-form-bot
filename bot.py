@@ -23,7 +23,7 @@ analytics = {}      # {action: count}
 user_analytics = {} # {tg_id: {action: count}}
 user_statuses = {}  # {tg_id: {status, service, updated}}
 
-BANNER_URL = "https://i.postimg.cc/zvkY0dn5/image.png"
+BANNER_URL = "https://i.postimg.cc/ncTMwzhP/image.png"
 DIV = "─────────────────────"
 
 # ─── Статусы ─────────────────────────────────────────────────
